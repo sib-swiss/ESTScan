@@ -1,5 +1,5 @@
 #!/usr/bin/env perl
-# $Id: prepare_data,v 1.5 2007/01/25 13:39:42 c4chris Exp $
+# $Id: prepare_data,v 1.7 2007/03/26 17:38:06 c4chris Exp $
 
 ################################################################################
 #
@@ -373,10 +373,12 @@ sub maskRedundancy {
 	  system("maskred -m $minmask < $infile > $maskedFile");
 	}
 	my $masked = `tail -1 $maskedFile`;
-	$masked =~ m/^>masked nucleotides: (\d+)/; my $m = $1;
-	my $ntstring = `grep -v '^>' $maskedFile | wc -cl`;
-	my ($nts) = $ntstring =~ s/\s*(\d+)\s+(\d+)\s*/$2-$1/e;
-	log_print("   masked $m of $nts nucleotides (" . 100*$m/$nts . "%)");
+	$masked =~ m/^>masked nucleotides: (\d+)/;
+	my $m = $1;
+	my $nts = `grep -v '^>' $maskedFile | wc -cl`;
+	$nts =~ s/^\s*(\d+)\s+(\d+)\s*$/$2-$1/e;
+	my $pct = int(10000*$m/$nts + 0.5) / 100;
+	log_print("   masked $m of $nts nucleotides ($pct%)");
     }
 }
 

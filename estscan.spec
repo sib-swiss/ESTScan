@@ -1,6 +1,6 @@
-# $Id: estscan.spec,v 1.6 2007/02/01 15:18:17 c4chris Exp $
+# $Id: estscan.spec,v 1.8 2007/03/27 14:47:54 c4chris Exp $
 Name:           estscan
-Version:        3.0.1
+Version:        3.0.2
 Release:        0
 Summary:        Detect coding regions in EST sequences
 
@@ -91,6 +91,17 @@ rm -rf $RPM_BUILD_ROOT
 
 
 %changelog
+* Tue Mar 27 2007 Christian Iseli <Christian.Iseli@licr.org> - 3.0.2-0
+- version 3.0.2
+- 2007-03-27 16:45  c4chris
+	* estscan.c, estscan.spec: Bump to version 3.0.2.
+- 2007-03-26 19:38  c4chris
+	* prepare_data: Show a bit less digits in the masked percent msg.
+- 2007-03-08 13:33  c4chris
+	* prepare_data: Fix masked nucleotides report message.
+- 2007-02-01 16:18  c4chris
+	* estscan.spec: Update changelog.
+
 * Thu Feb  1 2007 Christian Iseli <Christian.Iseli@licr.org> - 3.0.1-0
 - version 3.0.1
 - 2007-02-01 16:15  c4chris
