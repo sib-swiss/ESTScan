@@ -1,0 +1,713 @@
+#!/usr/bin/env perl
+# $Id: evaluate_model,v 1.15 2006/12/19 13:15:06 c4chris Exp $
+
+################################################################################
+#
+# evaluate_model
+# --------------
+#
+# Claudio Lottaz, SIB-ISREC, Claudio.Lottaz@isb-sib.ch
+# Christian Iseli, LICR ITO, Christian.Iseli@licr.org
+#
+# Copyright (c) 1999, 2006 Swiss Institute of Bioinformatics.
+# All rights reserved.
+#
+################################################################################
+
+use strict;
+use FASTAFile;
+use Symbol;
+
+# global configuration
+my $winsegshuffle_dbsize = 10000000; # the size for shuffled databases
+
+# global variables
+my $verbose = 1;
+my $norna = 0;
+my $optionsfile = '';
+my $forcedtuplesize = undef;
+my $forcedminmask = undef;
+my $forcedpseudocounts = undef;
+my $forcedminscore = undef;
+my $forcedstartlength = undef;
+my $forcedstartpreroll = undef;
+my $forcedstoplength = undef;
+my $forcedstoppreroll = undef;
+my $forcedsmatfile = undef;
+my $forceestscanparams = undef;
+
+my $datadir = '.';
+my $filestem = '';
+my $program = "estscan";
+
+require "build_model_utils.pl";
+
+################################################################################
+#
+#   Check command-line for switches
+#
+
+my $usage = "Usage: evaluate_model [options] <conf-files>\n" .
+    "       where options are:\n" .
+    "        -q        don't log on terminal\n" .
+    "        -O <str>  options passed to program\n" .
+    "        -o <file> options file\n" .
+    "        -n        skip evaluation on mRNAs\n" .
+    "        -t <int>  force tuple size, overwrites entry in config-files\n" .
+    "        -M <file> force score matrices file\n" .
+    "        -m <int>  force minimal mask, overwrites entry in config-files\n" .
+    "        -P <file> force program name (or file)\n" .
+    "        -p <int>  force pseudocounts, overwrites entry in config-files\n" .
+    "        -s <int>  force minimal score, overwrites entry in config-files\n" .
+    "        -l <int>  force length of start profile (in codons/triplets)\n" .
+    "        -r <int>  force start profile's preroll in 5'UTR (in codons/triplets)\n" .
+    "        -L <int>  force length of stop profile (in codons/triplets)\n" .
+    "        -R <int>  force sop profile's preroll in 5'UTR (in codons/triplets)\n" .
+    "More information  is obtained using 'perldoc evaluate_model'\n";
+
+while ($ARGV[0] =~ m/^-/) {
+    if ($ARGV[0] eq '-q') { shift; $verbose = 0; next; }
+    if ($ARGV[0] eq '-n') { shift; $norna = 1; next; }
+    if ($ARGV[0] eq '-O') { shift; $forceestscanparams = shift; next; }
+    if ($ARGV[0] eq '-o') { shift; $optionsfile        = shift; next; }
+    if ($ARGV[0] eq '-t') { shift; $forcedtuplesize    = shift; next; }
+    if ($ARGV[0] eq '-M') { shift; $forcedsmatfile     = shift; next; }
+    if ($ARGV[0] eq '-m') { shift; $forcedminmask      = shift; next; }
+    if ($ARGV[0] eq '-P') { shift; $program            = shift; next; }
+    if ($ARGV[0] eq '-p') { shift; $forcedpseudocounts = shift; next; }
+    if ($ARGV[0] eq '-s') { shift; $forcedminscore     = shift; next; }
+    if ($ARGV[0] eq '-l') { shift; $forcedstartlength  = shift; next; }
+    if ($ARGV[0] eq '-r') { shift; $forcedstartpreroll = shift; next; }
+    if ($ARGV[0] eq '-L') { shift; $forcedstoplength   = shift; next; }
+    if ($ARGV[0] eq '-R') { shift; $forcedstoppreroll  = shift; next; }
+    die "Unrecognized switch: $ARGV[0]\n$usage";
+}
+if ($#ARGV < 0) { die "No configuration file specified\n$usage"; }
+
+################################################################################
+#
+#   Main-loop through all specified config-files
+#
+
+my $parFile;
+while($parFile = shift) {
+    my($organism, $hightaxo, $dbfiles, $ugdata, $estdata, $datadir2, $filestem2,
+       $rnafile, $estfile, $estcdsfile, $estutrfile, $trainingfile, $testfile,
+       $utrfile, $cdsfile, $tuplesize, $minmask, $pseudocounts, $minscore,
+       $startlength, $startpreroll, $stoplength, $stoppreroll, $smatfile,
+       $estscanparams, $nb_isochores, $isochore_borders) =
+	   readConfig($parFile, $forcedtuplesize, $forcedminmask,
+		      $forcedpseudocounts, $forcedminscore,
+		      $forcedstartlength, $forcedstartpreroll,
+		      $forcedstoplength, $forcedstoppreroll, $verbose);
+    if (defined $forcedsmatfile) {
+      $smatfile = $forcedsmatfile;
+    }
+    if (defined $forceestscanparams) {
+      $estscanparams = $forceestscanparams;
+    }
+    log_open("readconfig.log");
+    $datadir = $datadir2; $filestem = $filestem2;
+    showConfig($parFile, $organism, $hightaxo, $dbfiles, $ugdata, $estdata, $datadir,
+	       $rnafile, $estfile, $estcdsfile, $estutrfile, $trainingfile,
+	       $testfile, $utrfile, $cdsfile, $tuplesize, $minmask,
+	       $pseudocounts, $minscore, $startlength, $startpreroll,
+	       $stoplength, $stoppreroll, $smatfile, $estscanparams,
+	       $nb_isochores, $isochore_borders);
+    if (system("which $program") != 0) {
+      log_print("   fatal: $program not found");
+      die;
+    }
+    log_close();
+
+    # read options-file, each line contains a set of options
+    my $o; my @options;
+    if ($optionsfile eq "") {
+      push @options, $estscanparams;
+    } else {
+      my $fh = gensym;
+      open $fh, $optionsfile;
+      @options = <$fh>;
+      close $fh;
+    }
+
+    # evaluate
+    log_open("evaluate_model.log");
+    log_print("\nUsing $program to scan EST/mRNA\n");
+    my %uf = ( 'rna' => $utrfile, 'est' => $estutrfile );
+    my %cf = ( 'rna' => $cdsfile, 'est' => $estcdsfile );
+    my %tf = ( 'rna' => $testfile, 'est' => $estcdsfile );
+    my %N = ( 'rna' => "mRNA", 'est' => "EST" );
+    foreach my $k ("rna", "est") {
+      next if ($k eq "rna") && ($norna == 1);
+      next unless -s $cf{$k};
+      foreach $o (@options) {
+	$o =~ s/\n$//;
+	log_print("\nEvaluating new model on "
+		  . $N{$k} . " data using $o....");
+	estimateFalse($k, 'utr', $uf{$k}, $smatfile, $o);
+	estimateFalse($k, 'cds', $cf{$k}, $smatfile, $o);
+      	evaluateStartStop($smatfile, $tf{$k}, $k, $o);
+	log_print("\nEvaluating new model on "
+		  . $N{$k} . " data using $o -S....");
+	estimateFalse($k, 'utr', $uf{$k}, $smatfile, "$o -S ");
+	estimateFalse($k, 'cds', $cf{$k}, $smatfile, "$o -S ");
+      	evaluateStartStop($smatfile, $tf{$k}, $k, "$o -S ");
+	if ($#options > 0) {
+	  unlink <$datadir/Evaluate/${k}prc*>;
+	}
+      }
+    }
+    log_close();
+    print "$parFile done.\n";
+}
+
+exit 0;
+
+sub estimateFalse {
+    # Runs ESTScan on ESTs from UTRs and CDSs. According to $cdsutr
+    # determines the false positive or false negative rate.
+
+    my ($prefix, $cdsutr, $estfile, $smatfile, $estscanparams) = @_;
+    my $x = `grep -i '^[a-z]' $estfile | wc`;
+    $x =~ s/^\s+//;
+    my($l, $w, $c) = split(/\s+/, $x);
+    my $nbTot = $c - $l;
+
+    # compute predictions for estfile
+    my $EP = $estscanparams;
+    $EP =~ s/[- ]+//g;
+    my $prcfile = "$datadir/Evaluate/$prefix"
+      . "prc$filestem$EP" . "_$cdsutr.seq";
+    if (-s $prcfile)  {
+      log_print(" - $prcfile already exists, skipped");
+    } else {
+	log_print(" - predicting CDS for $estfile...");
+	system "$program $estscanparams -M $smatfile $estfile > $prcfile";
+    }
+    $x = `grep -i '^[a-z]' $prcfile | wc`;
+    $x =~ s/^\s+//;
+    ($l, $w, $c) = split /\s+/, $x;
+    my $nbPrc = $c - $l;
+    my $r = $nbPrc/$nbTot;
+    my $nbSeq = `grep -c '^>' $prcfile`;
+    chop $nbSeq;
+    my $nbTotSeq = `grep -c '^>' $estfile`;
+    chop $nbTotSeq;
+    log_print("   found $nbPrc coding of $nbTot nucleotides " .
+	      "in $nbSeq of $nbTotSeq sequences");
+    if ($cdsutr eq 'utr') {
+      my $pct = sprintf "%.2f", 100 * $r;
+      my $pctseq = sprintf "%.2f", 100 * ($nbSeq / $nbTotSeq);
+      log_print("   estimated false positive rate: $pct% (nt) $pctseq% (seq)");
+    } else {
+      my $pct = sprintf "%.2f", 100 * (1.0 - $r);
+      my $pctseq = sprintf "%.2f", 100 * (1.0 - ($nbSeq / $nbTotSeq));
+      log_print("   estimated false negative rate: "
+	        . "$pct% (nt) $pctseq% (seq)");
+    }
+
+    # read scores from prcfile
+    my @scores;
+    my $fh = gensym;
+    open $fh, $prcfile;
+    while ( <$fh> ) {
+      if (m/^>\S+ (\S+) (\S+) (\S+)/) {
+	push @scores, $1;
+      }
+#	if (m/^>\S+ (\S+) (\S+) (\S+)/) {
+#	  push @scores, $1/($3 - $2 + 1);
+#	} # length norm
+    }
+    close $fh;
+
+    # write cumulative data
+    my $score;
+    my $cumulator = ($cdsutr eq 'utr') ? $#scores + 1 : 0;
+    my $histofile = "$datadir/Evaluate/$prefix" . "prc$filestem";
+    if ($cdsutr eq 'utr') {
+      open $fh, ">$histofile.dat";
+    } else {
+      open $fh, ">>$histofile.dat";
+      print $fh "\n";
+    }
+    foreach $score (sort {$a <=> $b} @scores) {
+      my $y = 100 * $cumulator / ($#scores + 1);
+      if (($y < 90) && ($y >  1)) {
+	print $fh "$score $y\n";
+      }
+      if ($cdsutr eq 'utr') {
+	$cumulator--;
+      } else {
+	$cumulator++;
+      }
+    }
+    close $fh;
+
+    # write gnuplot script
+    my($order, $minmask, $pseudo) = split /\_/, $filestem;
+    my $title = "Selectivity on UTRs / Sensitivity on CDSs "
+      . "(order $order, minmask $minmask, pseudocounts $pseudo)";
+    open $fh, ">$histofile.gplot";
+    print $fh <<EndOfBuffer;
+set title "$title".
+set xlabel "Score"
+set ylabel "Percentage"
+set data style lines
+set nokey
+plot '${prefix}prc${filestem}.dat'
+EndOfBuffer
+    close $fh;
+}
+
+################################################################################
+#
+#   Estimate false negative rate on RNA data
+#   Evaluate the the model's accuracy on start/stop detection in RNA data
+#
+
+sub evaluateStartStop {
+    # on RNA data test how close ESTScan detects the
+    # beginning and the end of the coding region
+
+    my ($smatfile, $testfile, $prefix, $estscanparams) = @_;
+
+    # predict on RNA/EST data
+    my $EP = $estscanparams;
+    $EP =~ s/[- ]+//g;
+    my $resultfile = "$datadir/Evaluate/$prefix" . "prc$filestem$EP.seq";
+    $resultfile =~ s/ //g;
+    if (-s $resultfile) {
+      log_print(" - $resultfile already exists, skipped");
+    } else {
+      log_print(" - predicting CDS on $testfile...");
+      system "$program $estscanparams -M $smatfile $testfile > $resultfile";
+    }
+
+    # count in testfile
+    my(%seqLengths, %seqCDSlen, $currSeq, $e);
+    my $origCtr = 0;
+    my $src = FASTAFile->new($testfile);
+    $src->openStream;
+    while (defined( $e = $src->getNext )) {
+      $seqLengths{$e->ac} = length $e->{_seq};
+      $e->{_seqHead} =~ m/CDS: (\S+) (\S+)/;
+      $seqCDSlen{$e->ac} = $2 - $1 + 1;
+      $origCtr++;
+    }
+    close $src->{_BTFfile};
+    if ($origCtr == 0) {
+      log_print("   no sequences found in $testfile, skipped");
+      return;
+    }
+
+    # initialize variables
+    my(%startHistogram, %stopHistogram);
+    my $delta = 99; # distances larger than this are considered weak predictions
+    my $averageStart = 0;
+    my $averageStop = 0;
+    my $weakStartCtr = 0;
+    my $wrongFrameCtr = 0;
+    my $weakStopCtr = 0;
+    my $worstSeq = "";
+    my $ctr = 0;
+    my $cdsNts = 0;
+    my $utrNts = 0;
+    my $fpNts = 0;
+    my $fnNts = 0;
+
+    # count utr for false positive/negative rate
+    if ($prefix eq 'est') {
+      my $utrfile = "$datadir/Evaluate/estutr.seq";
+      my $x = `grep -i '^[a-z]' $utrfile | wc`;
+      $x =~ s/^\s+//;
+      my($l, $w, $c) = split /\s+/, $x;
+      $utrNts = $c - $l;
+      $utrfile = "$datadir/Evaluate/$prefix" . "prc$filestem$EP" . "_utr.seq";
+      $x = `grep -i '^[a-z]' $utrfile | wc`;
+      $x =~ s/^\s+//;
+      ($l, $w, $c) = split /\s+/, $x;
+      $fpNts = $c - $l;
+    }
+
+    # read and evaluate the result file
+    log_print(" - computing histograms from $resultfile...");
+    $src = FASTAFile->new($resultfile);
+    $src->openStream;
+    while (defined( $e = $src->getNext)) {
+      # read entry
+      #if ($e->{_FASTAde} =~ m/minus strand/) { next }
+      my ($predStart, $predStop, $annotatedStart, $annotatedStop) =
+	$e->{_seqHead} =~ m/(\S+) (\S+)  ?CDS: (\S+) (\S+)/;
+      my $theId = $e->ac;
+      if ($e->{_FASTAde} =~ m/minus strand/ && $predStart ne "") {
+	my $tmp = $seqLengths{$e->ac} - $predStart + 1;
+	$predStart = $seqLengths{$e->ac} - $predStop + 1;
+	$predStop = $tmp;
+      }
+
+      # update histogram
+      my $diffStart = $predStart - $annotatedStart;
+      my $diffStop = $predStop - $annotatedStop;
+      $averageStart += abs($diffStart);
+      $averageStop += abs($diffStop);
+      if (abs($diffStart) > $delta) {
+	$weakStartCtr++;
+      }
+      if (abs($diffStop) > $delta) {
+	$weakStopCtr++;
+      }
+      if ((($diffStart % 3) != 0) && ($annotatedStart != 1)) {
+	$wrongFrameCtr++;
+      }
+      $startHistogram{sprintf("%05d", $diffStart)} += 1;
+      $stopHistogram{sprintf("%05d", $diffStop)} += 1;
+      $ctr++;
+
+      # update false positive/negative data
+      my $newCds = $annotatedStop - $annotatedStart + 1;
+      $cdsNts += $newCds;
+      $utrNts += $seqLengths{$e->ac} - $newCds;
+      if ($predStart ne ""
+	  && (($annotatedStart > $predStop)
+	      || ($annotatedStop < $predStart))) {
+	$fpNts += $predStop - $predStart + 1;
+	$fnNts += $annotatedStop - $annotatedStart + 1;
+      } else {
+	if ($diffStart < 0) {
+	  $fpNts -= $diffStart;
+	} else {
+	  $fnNts += $diffStart;
+	}
+    	if ($diffStop < 0) {
+	  $fnNts -= $diffStop;
+	} else {
+	  $fpNts += $diffStop;
+	}
+      }
+      delete $seqCDSlen{$e->ac};
+    }
+    close $src->{_BTFfile};
+    foreach (values(%seqCDSlen)) {
+      $fnNts += $_;
+    }
+    log_print("   predicted $ctr coding regions");
+    my $pct = sprintf "%.2f", 100 * ($fpNts / $utrNts);
+    log_print("   estimated false positive rate $pct% (nt)");
+    $pct = sprintf "%.2f", 100 * ($fnNts / $cdsNts);
+    log_print("   estimated false negative rate $pct% (nt)");
+    $averageStart /= $ctr;
+    $averageStop /= $ctr;
+
+    log_print(" - writing data-files and gnuplot scripts...");
+
+    # write data for start histogram
+    my $fh = gensym;
+    my $histofile
+      = "$datadir/Evaluate/$prefix" . "prc$filestem" . "_starthisto";
+    open $fh, ">$histofile.dat";
+    foreach (sort (keys %startHistogram)) {
+      print $fh "$_ $startHistogram{$_}\n";
+    }
+    close $fh;
+    my $exactStart = $startHistogram{'00000'};
+
+    # write gnuplot script for start histogram
+    $averageStart = sprintf("%.f", $averageStart);
+    open $fh, ">$histofile.gplot";
+    print $fh <<EndOfBuffer;
+set title "Start accuracy: analyzed $origCtr".
+set label "Predicted $ctr coding sequences" at graph 0.95, 0.95 right
+set label "Distance More than $delta in $weakStartCtr cases" at graph 0.95, 0.9 right
+set label "Exact prediction in $exactStart cases" at graph 0.95, 0.85 right
+set label "Wrong frame in $wrongFrameCtr cases" at graph 0.95, 0.8 right
+set label "Average distance $averageStart" at graph 0.95, 0.75 right
+set xlabel "Relative Position"
+set ylabel "Frequency"
+set data style boxes
+set boxwidth 1
+set nokey
+plot [-$delta:$delta] '${prefix}prc${filestem}_starthisto.dat'
+EndOfBuffer
+    close $fh;
+
+    # write data file for percentile picture of start histogram
+    $histofile .= '_p';
+    foreach (keys %startHistogram) {
+      if ($_ < 0) {
+    	$startHistogram{sprintf("%05d", -$_)}
+	  += $startHistogram{sprintf("%05d", $_)};
+	delete $startHistogram{$_};
+      }
+    }
+    my $cumulus = $origCtr;
+    my $pieLabels = "c(";
+    my $pieValues = "c(";
+    my $x = 0;
+    my $y = 0;
+    my $distBuffer = '';
+    my @ticks = (10, 25, 50, 100, 100);
+    open $fh, ">$histofile.dat";
+    foreach (sort (keys %startHistogram)) {
+      $x += $startHistogram{$_};
+      $cumulus -= $startHistogram{$_};
+      print $fh "$_ ", $cumulus/$origCtr*100, "\n";
+      if (($_ >= $y) && ($#ticks > -1)) {
+	$distBuffer .= sprintf "\t<=%4d: %8d\n", $y, $x;
+	$pieLabels .= "'<=$y:" . sprintf("%4.1f\%", $x/$origCtr*100) . "', ";
+	$pieValues .= "$x, ";
+       	$x = 0;
+	$y = shift @ticks;
+      }
+    }
+    close $fh;
+    $pieLabels .= "'>$y: " . sprintf("%4.1f\%", $x/$origCtr*100)
+      . "', 'missed: " . sprintf("%4.1f4\%", 100*$cumulus/$origCtr) . "')";
+    $pieLabels =~ s/<=0:/exact:/;
+    $pieValues .= "$x, $cumulus)";
+    $distBuffer .= sprintf "\t >%4d: %8d\n\tmissed: %8d", $y, $x, $cumulus;
+    log_print("   start predicted at distance\n$distBuffer");
+
+    # write R script for pie chart
+    my $piescript = "$datadir/Evaluate/$filestem\_piecharts.R";
+    if ($prefix eq 'rna') {
+      unlink $piescript;
+    }
+    open $fh, ">>$piescript";
+    print $fh <<EndOfBuffer;
+postscript('${prefix}prc${filestem}_startpie.eps', horizontal=F,
+	   onefile=F, width=3.0, height=3.0, paper="special", pointsize=8)
+x <- $pieValues
+pie(x, labels=$pieLabels, col=grey(seq(1,0,-1/length(x))))
+dev.off()
+EndOfBuffer
+    close $fh;
+
+    # write gnuplot script for percentile picture of start histogram
+    open $fh, ">$histofile.gplot";
+    print $fh <<EndOfBuffer;
+set title "Start accuracy: Percentage of Predictions far away from Annotation".
+set xlabel "Distance"
+set ylabel "Percentage"
+set data style lines
+set nokey
+plot [0:200] '${prefix}prc${filestem}_starthisto_p.dat'
+EndOfBuffer
+    close $fh;
+
+    # write data file for stop histogram
+    $histofile = "$datadir/Evaluate/$prefix" . "prc$filestem" . "_stophisto";
+    open $fh, ">$histofile.dat";
+    foreach (sort (keys %stopHistogram)) {
+      print $fh "$_ $stopHistogram{$_}\n";
+    }
+    close $fh;
+    $averageStop = sprintf "%.1f", $averageStop;
+    my $exactStop = $stopHistogram{'00000'};
+
+    # write gnuplot script for stop histogram
+    open $fh, ">$histofile.gplot";
+    print $fh <<EndOfBuffer;
+set title "Stop accuracy: analyzed $origCtr sequences".
+set label "Predicted $ctr coding sequences" at graph 0.95, 0.95 right
+set label "Distance More than $delta in $weakStopCtr cases" at graph 0.95, 0.9 right
+set label "Exact prediction in $exactStop cases" at graph 0.95, 0.85 right
+set label "Average distance $averageStop" at graph 0.95, 0.8 right
+set xlabel "Relative Position"
+set ylabel "Frequency"
+set data style boxes
+set boxwidth 1
+set nokey
+plot [-$delta:$delta] '${prefix}prc${filestem}_stophisto.dat'
+EndOfBuffer
+    close $fh;
+
+    # write data file for percentage picture of stop histogram
+    $histofile .= '_p';
+    foreach (keys %stopHistogram) {
+      if ($_ < 0) {
+       	$stopHistogram{sprintf("%05d", -$_)}
+	  += $stopHistogram{sprintf("%05d", $_)};
+	delete $stopHistogram{$_};
+      }
+    }
+    $x = 0;
+    $y = 0;
+    $distBuffer = '';
+    @ticks = (10, 25, 50, 100, 100);
+    $cumulus = $origCtr;
+    $pieLabels = "c(";
+    $pieValues = "c(";
+    open $fh, ">$histofile.dat";
+    foreach (sort (keys %stopHistogram)) {
+      $x += $stopHistogram{$_};
+      $cumulus -= $stopHistogram{$_};
+      print $fh "$_ ", $cumulus/$origCtr, "\n";
+      if (($_ >= $y) && ($#ticks > -1)) {
+	$distBuffer .= sprintf "\t<=%4d: %8d\n", $y, $x;
+	$pieLabels .= "'<=$y:" . sprintf("%4.1f\%", 100*$x/$origCtr) . "', ";
+	$pieValues .= "$x, ";
+       	$x = 0;
+	$y = shift @ticks;
+      }
+    }
+    close $fh;
+    $pieLabels .= "'>$y: " . sprintf("%4.1f\%", $x/$origCtr*100)
+      . "', 'missed: " . sprintf("%4.1f4\%", 100*$cumulus/$origCtr) . "')";
+    $pieLabels =~ s/<=0:/exact:/;
+    $pieValues .= "$x, $cumulus)";
+    $distBuffer .= sprintf "\t >%4d: %8d\n\tmissed: %8d", $y, $x, $cumulus;
+    log_print("   stop predicted at distance\n$distBuffer");
+
+    # write R script for pie chart
+    open $fh, ">>$piescript";
+    print $fh <<EndOfBuffer;
+postscript('${prefix}prc${filestem}_stoppie.eps', horizontal=F, onefile=F,
+	   width=3.0, height=3.0, paper="special", pointsize=8)
+x <- $pieValues
+pie(x, labels=$pieLabels, col=grey(seq(1,0,-1/length(x))))
+dev.off()
+EndOfBuffer
+    close $fh;
+
+    # write gnuplot script for percentile picture of stop histogram
+    open $fh, ">$histofile.gplot";
+    print $fh <<EndOfBuffer;
+
+set title "Stop accuracy: Percentage of Predictions far away from Annotation".
+set xlabel "Distance"
+set ylabel "Percentage"
+set data style lines
+set nokey
+plot [0:200] '${prefix}prc${filestem}_stophisto_p.dat'
+EndOfBuffer
+    close $fh;
+}
+
+################################################################################
+#
+#   Documentation
+#
+
+=head1 NAME
+
+evaluate_model - evaluate an ESTScan model generated by build_model
+
+=head1 SYNOPSIS
+
+evaluate_model [options] <config-files...>
+
+=head1 DESCRIPTION
+
+evaluate_model evaluates the performance of an ESTscan model. It uses
+the same directory structure as build_model, knows most of
+build_model's command line switches and read the same configuration
+files. ESTScan's performance is evluated in terms of false positive
+and negative rates on the nucleotide level, as well as prediction
+accuracy for start and stop sites. The script reads configuration
+files on the comannd line and performs the following steps for each of
+them:
+
+ - Extract untranslated regions from test mRNA
+ - Evaluate false positive rate.  evaluate false negative
+ - Evaluate false negative rate as well as start and stop prediction
+   accuracy on test mRNAs
+ - Find entirely untranslated and partially coding ESTs using UniGene
+ - Evaluate false positive rate on untranslated ESTs
+ - Evaluate false negative rate as well as start and stop prediction
+   accuracy on partially coding ESTs
+
+The evaluation is carried out on two kinds of data: mRNA data and EST
+data. The first three steps work on mRNA the latter on ESTs. When
+using RNA, two computational experiments are made. On one hand all
+untranslate regions of the test set of mRNAs are extracted and then
+analyzed in order to find the false positive rate on nucleotide as
+well as on sequence level. On the other hand, the complete test mRNAs
+are analyzed to estimate false positive and false negative rates on a
+nucleotide level. Moreover, distance distributions between prediction
+and annotation of start and stop sites are computed and histograms
+generated as gnuplot scripts and data files.
+
+The data needed for evluation using ESTs is extracted using UniGene.
+UniGene clusters are used to determine ESTs from untranslated regions
+and coding sequence respectively. This is done by matching the ESTs of
+a given cluster against its full-length mRNA with megablast and then
+determining where the match occurs relative to the annotated coding
+sequence. For each category, coding and non-coding, a single EST is
+chosen per cluster, in order to avoid redundancy. The matching
+location also allows to determine where coding sequences start and end
+in partially coding ESTs. The same annotation in FASTA headers is used
+as for mRNAs. The sets of coding and non-coding ESTs are used to
+perform the same computational experiments as those done with mRNA
+data.
+
+Files which already exist are reused. If an existing file is to be
+recomputed, it must deleted before running the script again. For
+instance, if a particular collection of mRNA or EST sequences should
+be used instead of data extracted by evaluate_model, providing these
+in FASTA format under the name of the mRNA file (where evaluate_model
+would store the extracted data) is enough. The same procedure can be
+applied to provide hand picked test data. However, in mRNA and EST
+data used for test and training, evaluate_model expects annotations of
+coding sequence start and stop in the header as two integer values
+following the tag 'CDS:'.The first integer points to the first
+nucleotide of the CDS, the second to the last. Thus the length of the
+CDS is <stop> - <start> + 1. The position counting starts with 1.
+
+=head1 DIRECTORY STRUCTURE
+
+evaluate_model uses the same directory structure as build_model, the
+root of which is given in the configuration file. From this root it
+adds the subdirectory 'Evaluate', which contains all result files.
+mRNA and EST data as well as test and training data files are dposited
+in the data-root directory if not otherwise specified in the
+configuration file.
+
+=head1 OPTIONS AND CONFIGURATION FILE
+
+The same command options except '-e' and variables in configuration
+files as for build_model can be used. They are essentially used to
+find the proper model and to create different files for different
+models in a systematic manner. However, there is one additional
+option:
+
+ -o <optionsfiles>
+    An options file contains a set of ESTScan commandline switches per
+    line. For each line of the file the evaluation is performed
+    once. The script and data files generated at each run are removed
+    in this mode, the results can only be collected in the Report
+    file. If '-o' is not specified, evaluation is performed using
+    ESTScan's default parameters (except for the matric to be
+    evaluated, of course).
+
+Additional parameters defined in the configuration files for
+evaluate_model are listed here:
+
+ * $ugdata
+   Name of the file(s) containing data about unigene clusters.
+   If this is not defined, no evaluation is currently implemented.
+
+$filestem is used to generate many filenames. It is generated
+automatically according to the tuplesize, the minmask and the
+pseudocounts applied to generate them.
+
+=head1 REQUIREMENTS
+
+During analysis of UniGene clusters and evaluation of the generated
+tables some external packages are used to collect and compare
+sequences. evaluate_model relies on 'megablast' to determine where
+ESTs match on full-length mRNA sequences. The 'fetch' utility is used
+to find the EST and mRNA entries. This tool needs a properly indexed
+version of EMBL and RefSeq flatfiles. Use 'indexer' for this. Both tools
+are part of the BTLib toolset.
+
+=head1 AUTHOR
+
+Claudio Lottaz, SIB-ISREC, Claudio.Lottaz@isb-sib.ch
+
+=cut
+
+#
+#   End of file
+#
+################################################################################

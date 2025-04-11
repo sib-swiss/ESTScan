@@ -1,0 +1,527 @@
+#!/usr/bin/env perl
+# $Id: extract_UG_EST,v 1.2 2006/12/19 12:52:07 c4chris Exp $
+
+################################################################################
+#
+# extract_UG_EST
+# --------------
+# 
+# Claudio Lottaz, SIB-ISREC, Claudio.Lottaz@isb-sib.ch
+# Christian Iseli, LICR ITO, Christian.Iseli@licr.org
+#
+# Copyright (c) 2006 Swiss Institute of Bioinformatics. All rights reserved.
+#
+################################################################################
+
+use strict;
+use FASTAFile;
+use Symbol;
+
+# global variables
+my $verbose = 1;
+my $norna = 0;
+
+my $datadir = '.';
+my $filestem = '';
+
+require "build_model_utils.pl";
+
+################################################################################
+#
+#   Check command-line for switches
+#
+
+my $usage = "Usage: extract_UG_EST [options] <conf-files>\n" .
+  "       where options are:\n" .
+  "        -q        don't log on terminal\n" .
+  "More information  is obtained using 'perldoc extract_UG_EST'\n";
+
+while ($ARGV[0] =~ m/^-/) {
+  if ($ARGV[0] eq '-q') { shift; $verbose = 0; next; }
+  die "Unrecognized switch: $ARGV[0]\n$usage";
+}
+if ($#ARGV < 0) { die "No configuration file specified\n$usage"; }
+
+################################################################################
+#
+#   Main-loop through all specified config-files
+#
+
+my $parFile;
+while($parFile = shift) { 
+  my($organism, $hightaxo, $dbfiles, $ugdata, $estdata, $datadir2, $filestem2, 
+     $rnafile, $estfile, $estcdsfile, $estutrfile, $trainingfile, $testfile, 
+     $utrfile, $cdsfile, $tuplesize, $minmask, $pseudocounts, $minscore, 
+     $startlength, $startpreroll, $stoplength, $stoppreroll, $smatfile,
+     $estscanparams, $nb_isochores, $isochore_borders) =
+       readConfig($parFile, undef, undef, undef, 
+		  undef, undef, undef,
+		  undef, undef, $verbose);
+  log_open("readconfig.log");
+  $datadir = $datadir2; $filestem = $filestem2;
+  showConfig($parFile, $organism, $hightaxo, $dbfiles, $ugdata, $estdata, $datadir, 
+	     $rnafile, $estfile, $estcdsfile, $estutrfile, $trainingfile,
+	     $testfile, $utrfile, $cdsfile, $tuplesize, $minmask,
+	     $pseudocounts, $minscore, $startlength, $startpreroll,
+	     $stoplength, $stoppreroll, $smatfile, $estscanparams,
+	     $nb_isochores, $isochore_borders);
+  log_close();
+
+  # evaluate on mRNAs
+  log_open("extract_UG_EST.log");
+
+  # extract ESTs from UG clusters
+  die "No UG clusters data file provided" unless defined $ugdata;
+  log_print("\nGenerating evaluation EST data....");
+  analyzeClusters($testfile, $ugdata);
+  collect_testsets($estcdsfile, $estutrfile);
+  log_close();
+  print "$parFile done.\n";
+}
+
+exit 0;
+
+################################################################################
+#
+#   Estimate false positive/negative rate on EST-data extracted through UniGene
+#
+
+sub analyzeClusters {
+  # For each UniGene cluster with reference to refseq mRNA or mRNA
+  # entry in embl containing complete CDS annotated, find all ESTs
+  # and use megablast to align the ESTs with the mRNA. Store the
+  # match positions.
+
+  my($mrna, $refseqmrna, @emblmrnas, @ests, $eststring);
+  my $fh = gensym;
+  my $ugdata = "$datadir/Evaluate/ug.data";
+  my($testfile, $ugcf) = @_;
+
+  if (-s $ugdata) {
+    log_print("   $ugdata already exists, skip.");
+  } else {
+    my %ID;
+    my $ua = BTFile->new("$ugcf.ac.idx" . "[18,10,10]", "", $ugcf);
+    log_print("   find UniGene clusters for test mRNAs...");
+    my $fh = gensym;
+    open $fh, $testfile;
+    while ( <$fh> ) {
+      if (m/^>tem.(\S+)/) {
+	my $ac = $1;
+	my $e = $ua->fetch($ac);
+	unless (defined $e) {
+	  print STDERR "Couldn't find AC $ac in $ugcf\n";
+	  next;
+	}
+	($ac) = $e =~ /^ID\s+(\S+)/s;
+	$ID{$ac} = 1;
+      }
+    }
+    close $fh;
+    undef $ua;
+    open $fh, ">$ugdata";
+    $ua = BTFile->new("$ugcf.idx" . "[18,10,10]", "", $ugcf);
+    foreach my $ac (sort(keys %ID)) {
+      my $e = $ua->fetch($ac);
+      print $fh $e;
+    }
+    close $fh;
+  }
+
+  log_print("   reading UniGene clusters...");
+  my @clusters;
+  my $clusterfile = "$datadir/Evaluate/clusters.lst";
+  if (-s $clusterfile) { 
+    log_print("   $clusterfile already exists, read existing");
+    open $fh, $clusterfile;
+    @clusters = <$fh>;
+    close $fh;
+  } else {
+    if (system("which fetch") != 0) {
+      log_print("   fatal: fetch not found");
+      die;
+    }
+    $mrna = undef;
+    $refseqmrna = undef; 
+    undef @ests;
+    undef @emblmrnas;
+    open $fh, ">$clusterfile";
+    my $ugfh = gensym;
+    open $ugfh, $ugdata;
+    while ( <$ugfh> ) {
+      if (m/^SEQUENCE    ACC=([NX]M_[^.;]+)/) {
+	$refseqmrna = "rs:$1";
+      } elsif (m/PID=/ && m/^SEQUENCE    ACC=([^.;]+)/) {
+	push @emblmrnas, "embl:$1";
+      }
+      if (m/LID=/ && m/^SEQUENCE    ACC=([^.;]+)/) {
+	push @ests, "embl:$1";
+      }
+      if (m+^//+) { # found the end of the current entry
+	if ($#ests >= 0) {
+	  if (defined $refseqmrna) {
+	    $mrna = "$refseqmrna";
+	  } else {
+	    foreach my $id (@emblmrnas) {
+	      my $e = `fetch $id`;
+	      if (($e =~ m/^ID\s+\S+; SV \d+; linear; mRNA;/s)
+		  && ($e =~ m/^FT   CDS\s+\d+\.\.\d+$/m)) { 
+		$mrna = "$id";
+		last; 
+	      }
+	    }
+	  }
+	}
+	if (defined($mrna)) {
+	  my $line = "$mrna : " . join(' ', @ests) . "\n";
+	  print $fh $line; 
+	  push @clusters, $line; 
+	}
+	$mrna = undef;
+	$refseqmrna = undef; 
+	undef @ests;
+	undef @emblmrnas;
+      }
+    }
+    close $ugfh;
+    close $fh;
+  }
+  my $nclusters = $#clusters + 1;
+  log_print("   found $nclusters clusters");
+
+  log_print(" - matching ESTs against mRNAs...");
+  my $matchfile = "$datadir/Evaluate/matches.lst";
+  if (-s $matchfile) {
+    log_print("   $matchfile already exists, skipped");
+    return;
+  }
+  if (system("which formatdb") != 0) {
+    log_print("   fatal: formatdb not found");
+    die;
+  }
+  if (system("which megablast") != 0) {
+    log_print("   fatal: megablast not found");
+    die;
+  }
+  my $i = 0;
+  my $tmprnafile = "$datadir/Evaluate/tmpmrna.seq";
+  my $tmpestdb = "$datadir/Evaluate/tmpestdb";
+  my $matchfh = gensym;
+  system("touch $matchfile");
+  foreach (@clusters) {
+    my $cdsBegin;
+    my $cdsEnd;
+    ($mrna, $eststring) = split / : /, $_, 2;
+    chop $eststring;
+    @ests = split / /, $eststring;
+    $i++;
+    my $nests = $#ests + 1;
+    log_print("   analyzing cluster $i of $nclusters:"
+	      . " $mrna (has $nests ESTs)...");
+
+    # find full RNA and the position of its coding sequence
+    my $e = `fetch $mrna`;
+    if ($e =~ m/CDS\s+(\d+)\.\.(\d+)/) {
+      $cdsBegin = $1;
+      $cdsEnd = $2;
+    } else {
+      next;
+    }
+    system "fetch -f $mrna > $tmprnafile";
+
+    # collect ESTs into BLAST database
+    open $matchfh, "|xargs fetch -f >$tmpestdb.seq";
+    print $matchfh join("\n", @ests), "\n";
+    close $matchfh;
+    system "formatdb -p F -n $tmpestdb -i $tmpestdb.seq";
+
+    # match ESTs using megablast
+    my $minLen = 300;      # minimal length an EST matches the RNA nicely
+    my $maxMissed = 0.05;  # maximal number of unmatched nucleotides
+    open $matchfh, ">>$matchfile";
+    open $fh, "megablast -D 0 -e 1e-20 -d $tmpestdb -i $tmprnafile |";
+    $_ = <$fh>;
+    my($estid, $ori, $eStart, $rStart, $eStop, $rStop, $mismatch) =
+      m/^\'emb\|([^\|]+)[^\']+\'==\'([+-])\S+ \((\d+) (\d+) (\d+) (\d+)\) (\d+)/;
+    my $oldestid = $estid;
+    my $oldori = $ori;
+    my $offset = $eStart;
+    my $matchBegin = $rStart;
+    my $matchEnd = $rStop;
+    my $matchLen = $eStop;
+    my $matchMissed = $offset + $mismatch;
+    while ( <$fh> ) {
+      ($estid, $ori, $eStart, $rStart, $eStop, $rStop, $mismatch) =
+	m/^\'emb\|([^\|]+)[^\']+\'==\'([+-])\S+ \((\d+) (\d+) (\d+) (\d+)\) (\d+)/;	    
+      next if $ori eq '-';
+      if ($oldestid eq $estid) {
+	my $tmpa = abs($eStart - $matchLen);
+	my $tmpb = abs($rStart - $matchEnd);
+	$matchMissed += (($tmpa < $tmpb) ? $tmpb : $tmpa)  + $mismatch;
+      } else {
+	my $tmp = $matchEnd - $matchBegin + $offset;
+	if ($matchLen < $tmp) {
+	  $matchLen = $tmp;
+	}
+	if (($oldori eq '+')
+	    && ($matchLen > $minLen)
+	    && ($matchMissed / $matchLen < $maxMissed)) { 
+	  print $matchfh "$mrna $cdsBegin $cdsEnd embl:$oldestid ",
+		"$matchBegin $matchEnd $offset $matchMissed\n";
+	}
+	$oldestid = $estid;
+	$oldori = $ori;
+	$offset = $eStart;
+	$matchBegin = $rStart;
+	$matchMissed = (($eStart < $rStart) ? $eStart : $rStart) + $mismatch;
+      }
+      $matchEnd = $rStop;
+      $matchLen = $eStop;
+    }
+    my $tmp = $matchEnd - $matchBegin + $offset;
+    if ($matchLen < $tmp) {
+      $matchLen = $tmp;
+    }
+    if (($oldori eq '+')
+	&& ($matchLen > $minLen)
+	&& ($matchMissed / $matchLen < $maxMissed)) { 
+      print $matchfh "$mrna $cdsBegin $cdsEnd embl:$oldestid ",
+	    "$matchBegin $matchEnd $offset $matchMissed\n";
+    }
+    close $matchfh;
+    close $fh;
+    unlink <$datadir/Evaluate/tmp*>;
+  }
+}
+
+sub collect_testsets {
+  # reads the list generated by analyzeClusters and for each
+  # full-length mRNA determines at most one piece of EST entirely
+  # contained in coding sequence and one contained in untranslated
+  # region.
+
+  my $fh = gensym;
+  my($estcdsfile, $estutrfile) = @_;
+  log_print(" - collecting ESTs from coding sequences and"
+	    . " untranslated regions...");
+
+  if ((-s $estutrfile) && (-s $estcdsfile)) {
+    log_print("   $estcdsfile already exists, skipped");
+    log_print("   $estutrfile already exists, skipped");
+    return;
+  }
+
+  my $i = 0;
+  my($oldmrna, $utrdone, $cdsdone);
+  my $minUTRLen = 100;   # minimum length of a valid UTR match
+  my $matchfile = "$datadir/Evaluate/matches.lst";
+  my $nbMatches = `wc -l $matchfile`;
+  $nbMatches =~ m/^\s*(\S+)/;
+  $nbMatches = $1;
+  my $matchfh = gensym;
+  open $matchfh, $matchfile;
+  while ( <$matchfh> ) {
+    my ($mrna, $cdsBegin, $cdsEnd, $est,
+	$matchBegin, $matchEnd, $offset, $mismatches) = split;
+    if ($mrna ne $oldmrna) {
+      $utrdone = undef;
+      $cdsdone = undef;
+      $oldmrna = $mrna;
+    }
+    my $matchLen = $matchEnd - $matchBegin + $offset;
+    next if $matchLen < $minUTRLen;
+    if ($matchEnd < $cdsBegin) { # match is entirely in 5'UTR
+      unless (defined $utrdone) { 
+	addESTBegin($est, $estutrfile, $matchLen);
+	$utrdone = 1;
+      }
+    } else {
+      if ($matchEnd < $cdsEnd) { # match end is in CDS
+	if ($matchBegin < $cdsBegin) { # match overlaps CDS begin
+	  if (!defined($utrdone) && (($cdsBegin-$matchBegin) > $minUTRLen)) { 
+	    addESTBegin($est, $estutrfile,
+			$cdsBegin - $matchBegin + $offset - 1);
+	    $utrdone = 1;
+	  }
+	  unless (defined $cdsdone) { 
+	    addCdsEST($est, $estcdsfile, $matchLen, 
+		      $cdsBegin - $matchBegin + $offset, $matchLen);
+	    $cdsdone = 1; 
+	  }
+	} else { # match is included in CDS
+	  unless (defined $cdsdone) { 
+	    addCdsEST($est, $estcdsfile, $matchLen, 1, $matchLen); 
+	    $cdsdone = 1; 
+	  }
+	}
+      } else { # match end is in 3'UTR
+	if ($matchBegin < $cdsBegin) { # match includes CDS
+	  if (!defined($utrdone) && (($cdsBegin-$matchBegin) > $minUTRLen)) { 
+	    addESTBegin($est, $estutrfile,
+			$cdsBegin - $matchBegin + $offset - 1);
+	    $utrdone = 1;
+	  }
+	  if (!defined($utrdone) && (($matchEnd - $cdsEnd) > $minUTRLen)) { 
+	    addESTEnd($est, $estutrfile, $matchLen, $matchEnd - $cdsEnd);
+	    $utrdone = 1;
+	  }
+	  unless (defined $cdsdone) { 
+	    addCdsEST($est, $estcdsfile, $matchLen, 
+		      $cdsBegin - $matchBegin + $offset, 
+		      $cdsEnd - $matchBegin + $offset); 
+	    $cdsdone = 1; 
+	  }
+	} else { 
+	  if ($matchBegin < $cdsEnd) { # match overlaps CDS end
+	    if (!defined($utrdone) && (($matchEnd-$cdsEnd) > $minUTRLen)) { 
+	      addESTEnd($est, $estutrfile, $matchLen, $matchEnd - $cdsEnd);
+	      $utrdone = 1;
+	    }
+	    unless (defined $cdsdone) { 
+	      addCdsEST($est, $estcdsfile, $matchLen, 
+			1, $cdsEnd - $matchBegin + $offset);
+	      $cdsdone = 1; 
+	    }
+	  } else { # match is entirely in 3'UTR
+	    if (!defined($utrdone) && ($matchEnd - $matchBegin > $minUTRLen)) { 
+	      addESTBegin($est, $estutrfile, $matchLen);
+	      $utrdone = 1;
+	    }
+	  }
+	}
+      }
+    }
+    $i += 1;
+    if (($i % 100) == 0) {
+      log_print("   $i of $nbMatches matches evaluated");
+    }
+  }
+  close $matchfh;
+}
+
+sub addCdsEST {
+  my($est, $estfile, $len, $cdsFrom, $cdsTo) = @_;
+  my $src = FASTAFile->new("fetch -f $est |");
+  $src->openStream;
+  my $e = $src->getNext;
+  close $src->{_BTFfile};
+  $e->{_seq} = substr $e->{_seq}, 0, $len;
+  $e->{_seqHead} =~ s/(>\S+)/$1 CDS: $cdsFrom $cdsTo /;
+  $e->{_seqHead} .= " (first $len nucleotides)";
+  my $fh = gensym;
+  open $fh, ">> $estfile";
+  $e->printFASTA($fh);
+  close $fh;
+}
+
+sub addESTBegin {
+  my($est, $estfile, $len) = @_;
+  my $src = FASTAFile->new("fetch -f $est |");
+  $src->openStream;
+  my $e = $src->getNext;
+  close $src->{_BTFfile};
+  $e->{_seq} = substr $e->{_seq}, 0, $len;
+  $e->{_seqHead} .= " (first $len nucleotides)";
+  my $fh = gensym;
+  open $fh, ">> $estfile";
+  $e->printFASTA($fh);
+  close $fh;
+}
+
+sub addESTEnd {
+  my($est, $estfile, $matchLen, $len) = @_;
+  my $src = FASTAFile->new("fetch -f $est |");
+  $src->openStream;
+  my $e = $src->getNext;
+  close $src->{_BTFfile};
+  $e->{_seq} = substr $e->{_seq}, 0, $matchLen;
+  $e->{_seq} = substr $e->{_seq}, -$len;
+  $e->{_seqHead} .= " (last $len nucleotides)";
+  my $fh = gensym;
+  open $fh, ">> $estfile";
+  $e->printFASTA($fh);
+  close $fh;
+}
+
+################################################################################
+#
+#   Documentation
+#
+
+=head1 NAME
+
+extract_UG_EST - extract ESTs from UG clusters as test sets for ESTScan
+
+=head1 SYNOPSIS
+
+extract_UG_EST [options] <config-files...>
+
+=head1 DESCRIPTION
+
+The data needed for evaluating ESTScan using ESTs is extracted from UniGene
+clusters.  UniGene clusters are used to determine ESTs from untranslated
+regions and coding sequence respectively.  This is done by matching the ESTs
+of a given cluster against its full-length mRNA with megablast and then
+determining where the match occurs relative to the annotated coding sequence.
+For each category, coding and non-coding, a single EST is chosen per cluster,
+in order to avoid redundancy.  The matching location also allows to determine
+where coding sequences start and end in partially coding ESTs.  The same
+annotation in FASTA headers is used as for mRNAs.  The sets of coding and
+non-coding ESTs can later be used to perform the same computational
+experiments as those done with mRNA data.
+
+Files which already exist are reused. If an existing file is to be recomputed,
+it must deleted before running the script again. For instance, if a particular
+collection of EST sequences should be used instead of data extracted by
+extract_UG_EST, providing these in FASTA format under the name of the EST file
+(where extract_UG_EST would store the extracted data) is enough. The same
+procedure can be applied to provide hand picked test data.  However, in mRNA
+and EST data used for test and training, evaluate_model expects annotations of
+coding sequence start and stop in the header as two integer values following
+the tag 'CDS:'.  The first integer points to the first nucleotide of the CDS,
+the second to the last.  Thus the length of the CDS is <stop> - <start> + 1.
+The position counting starts with 1.
+
+=head1 DIRECTORY STRUCTURE
+
+extract_UG_EST uses the same directory structure as build_model, the root of
+which is given in the configuration file.  From this root it adds the
+subdirectory 'Evaluate', which contains all result files.  EST data as well as
+test and training data files are deposited in the data-root directory if not
+otherwise specified in the configuration file.
+
+=head1 OPTIONS AND CONFIGURATION FILE
+
+ -q
+    Be quiet.
+
+Additional parameters defined in the configuration files for extract_UG_EST
+are listed here:
+
+ * $ugdata
+   Name of the file(s) containing data about unigene clusters.
+   If this is not defined, no evaluation is currently implemented.
+
+$filestem is used to generate many filenames. It is generated automatically
+according to the tuplesize, the minmask and the pseudocounts applied to
+generate them.
+
+=head1 REQUIREMENTS
+
+During analysis of UniGene clusters and evaluation of the generated tables
+some external packages are used to collect and compare sequences.
+extract_UG_EST relies on 'megablast' to determine where ESTs match on
+full-length mRNA sequences.  The 'fetch' utility is used to find the EST and
+mRNA entries.  This tool needs a properly indexed version of EMBL and RefSeq
+flatfiles.  Use 'indexer' for this.  Both tools are part of the BTLib toolset.
+
+=head1 AUTHOR
+
+Claudio Lottaz, SIB-ISREC, Claudio.Lottaz@isb-sib.ch
+
+=cut
+
+#
+#   End of file
+#
+################################################################################
