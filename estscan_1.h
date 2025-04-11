@@ -1,4 +1,4 @@
-/* $Id: estscan.h,v 1.5 2000/08/22 13:21:37 clottaz Exp $
+/* $Id: estscan_1.h,v 1.1.1.1 2006/12/18 15:44:47 c4chris Exp $
  *
  * Christian Iseli, LICR ITO, Christian.Iseli@licr.org
  *

@@ -1,10 +1,10 @@
-/* $Id: estscan.c,v 1.20 2001/09/19 12:45:02 clottaz Exp $
+/* $Id: estscan_1.c,v 1.1.1.1 2006/12/18 15:44:47 c4chris Exp $
  *
  * Christian Iseli, LICR ITO, Christian.Iseli@licr.org
  *
  * Copyright (c) 1999 Swiss Institute of Bioinformatics. All rights reserved.
  */
-#include "estscan.h"
+#include "estscan_1.h"
 #include <stdio.h>
 #include <limits.h>
 #ifndef __GNUC__
@@ -116,7 +116,7 @@ CreateMatrix(int order, int frames, int offset, SV *rv, int min, int method)
 	  } else {
 	    /* Something a bit more funky...  */
 	    for (k = 0; k < stepping - 1; k++) {
-	      int avg;
+	      int avg = 0;
 	      int sorted[4];
 	      sorted[0] = *(ptr - stepping);
 	      sorted[1] = *(ptr - stepping * 2);
@@ -306,10 +306,10 @@ evaluateProfileAt(char *seq, int mindex, int index)
   ptr = seq + index  - mg[mindex].offset; 
   if (strlen(ptr) < mg[mindex].frames) { return -100; }
   for (i = 0; i < mg[mindex].frames; i++) {
-    /*    printf("%c", *ptr); /*!!!*/
+    /*    printf("%c", *ptr); */
     score += mg[mindex].m[i][GetCode(*ptr++)];
   }
-  /*  printf(" yields score %d\n", score);/*!!!*/
+  /*  printf(" yields score %d\n", score);*/
   return score;
 }
 
@@ -329,14 +329,14 @@ finetune_stop(char *seq, int maxPos, int stopIndex, int stopDist, char *res, int
   char *ptr, *from, *to, c[3];
 
   /*printf("finetune seq %s,\nmaxPos %d, stopDist %d, start %d, end %d\nres %s\n", 
-	 seq, maxPos, stopDist, start, *end, res);/*!!!*/
+	 seq, maxPos, stopDist, start, *end, res);*/
 
   /* scan into window determined by stopDist */
   ptr = res;
   from = res + strlen(res) - stopDist;
   currFrame = 0;
   while ((ptr < from) || (currFrame != 0)) { 
-    /*printf("skip %c in frame %d\n", *ptr, currFrame);/*!!!*/
+    /*printf("skip %c in frame %d\n", *ptr, currFrame);*/
   if (*ptr < 'Z') currFrame = (currFrame + 1) % 3;
     ptr++; 
   }
@@ -351,15 +351,15 @@ finetune_stop(char *seq, int maxPos, int stopIndex, int stopDist, char *res, int
     currFrame = (currFrame + 1) % 3;
     ptr++; 
     if (currFrame == 0) {
-      /*printf("In res, is %c%c%c a stop codon?\n", c[0], c[1], c[2]);/*!!!*/
+      /*printf("In res, is %c%c%c a stop codon?\n", c[0], c[1], c[2]);*/
       if (((c[0] == 'T') && (c[1] == 'A') && (c[2] == 'A')) ||
 	  ((c[0] == 'T') && (c[1] == 'G') && (c[2] == 'A')) ||
 	  ((c[0] == 'T') && (c[1] == 'A') && (c[2] == 'G'))) { 
 	ptr -= 3;
-	/*printf("fine tuned stop from %d, ptr points to %c ", *end, *ptr);/*!!!*/
+	/*printf("fine tuned stop from %d, ptr points to %c ", *end, *ptr);*/
 	*ptr++ = 0; *end -= 1;
 	while (*ptr++) *end -= 1;
-	/*printf("to %d due to %c%c%c\n", *end, c[0], c[1], c[2]);/*!!!*/
+	/*printf("to %d due to %c%c%c\n", *end, c[0], c[1], c[2]);*/
 	return;
       }
     }
@@ -373,17 +373,17 @@ finetune_stop(char *seq, int maxPos, int stopIndex, int stopDist, char *res, int
     c[0] = *ptr++;
     c[1] = *ptr++;
     c[2] = *ptr++;
-    /*printf("After res, is %c%c%c a stop codon\n", c[0], c[1], c[2]);/*!!!*/
+    /*printf("After res, is %c%c%c a stop codon\n", c[0], c[1], c[2]);*/
     if (((c[0] == 'T') && (c[1] == 'A') && (c[2] == 'A')) ||
 	((c[0] == 'T') && (c[1] == 'G') && (c[2] == 'A')) ||
 	((c[0] == 'T') && (c[1] == 'A') && (c[2] == 'G'))) { 
       ptr -= 3;
-      /*printf("fine tuned stop from %d ", *end);/*!!!*/
+      /*printf("fine tuned stop from %d ", *end);*/
       res += strlen(res);
       seq += maxPos + 1;
       while (seq < ptr) { *res++ = *seq++; *end += 1; }
       *res = 0;       
-      /*printf("to %d due to %c%c%c\n", *end,  c[0], c[1], c[2]);/*!!!*/
+      /*printf("to %d due to %c%c%c\n", *end,  c[0], c[1], c[2]);*/
       return;
     }
   }
@@ -408,17 +408,14 @@ Compute(char *seq, int iPen, int dPen, int cutOff, int dropMax, SV *rv, int gInd
   int startPos = 0;
   int bigMax = 0; /* The overall maximum.  */
   int maxOnly = 0;
-  int max;
-  int maxPos;
-  int maxFrame;
-  int *starts;
-  int *stops;
+  int max = (startIndex == -1) ? 0 : INT_MIN;
+  int maxPos = 0;
+  int maxFrame = 0;
   char *res = malloc(sizeof(char) * (sLen * 2 + stopDist));
   sInfo_t **wing[2];
   sInfo_t mLine[3];
   int E, f, i;
   signed char *fScore[3];
-  int frames;
   unsigned int tableMod = 1;
   FILE *codingfh = NULL;
   FILE *startfh = NULL;
@@ -456,7 +453,7 @@ Compute(char *seq, int iPen, int dPen, int cutOff, int dropMax, SV *rv, int gInd
     int curPos = tupleSize - 1;
     /* Set things up.  */
 
-    max = (startIndex == -1) ? 0.0 : INT_MIN;
+    max = (startIndex == -1) ? 0 : INT_MIN;
     maxPos = 0;
     maxFrame = 0;
     for (f = 0; f < 3; f++) {
@@ -559,7 +556,7 @@ Compute(char *seq, int iPen, int dPen, int cutOff, int dropMax, SV *rv, int gInd
 	if (startfh) fprintf(startfh, "%d %d\n", curPos, startScore - 100);
 	if (mLine[0].score < startScore) {
 	  /*printf("move start to %d with score %d, instead of %d, start %c%c%c\n", curPos, 
-		 startScore, mLine[0].score, seq[curPos], seq[curPos+1], seq[curPos+2]); /*!!!*/
+		 startScore, mLine[0].score, seq[curPos], seq[curPos+1], seq[curPos+2]); */
 	  mLine[0].score = startScore;
 	  trace[0][curPos] = 's';
 	}
@@ -655,4 +652,3 @@ Compute(char *seq, int iPen, int dPen, int cutOff, int dropMax, SV *rv, int gInd
   free(res);
   return bigMax;
 }
-

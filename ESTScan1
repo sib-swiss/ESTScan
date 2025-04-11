@@ -1,6 +1,6 @@
-#!/usr/local/bin/perl 
+#!/usr/bin/env perl 
 
-# $Id: ESTScan,v 1.28 2001/09/19 12:45:01 clottaz Exp $
+# $Id: ESTScan1,v 1.2 2006/12/18 23:11:09 c4chris Exp $
 #
 # Christian Iseli, LICR ITO, Christian.Iseli@licr.org
 #
@@ -9,7 +9,7 @@
 use strict;
 use Getopt::Long;
 use FASTAFile;
-use ESTScan;
+use ESTScan1;
 
 $| = 1; # Very important, otherwise get garbled output in batch mode.
 
@@ -19,7 +19,7 @@ if ($ESTScanDir eq "") {
 }
 
 $main::copyright = <<EndOfMsg;
-This is ESTScan version 1.1b (September 2001)
+This is ESTScan version $ESTScan1::VERSION (February 2002)
 Copyright (c) 1999, 2000 by the Swiss Institute of Bioinformatics.
 All rights reserved. See the file COPYRIGHT for details.
 EndOfMsg
@@ -28,12 +28,10 @@ my %opt;
 my @options = ( "help", "m=i", "d=i", "i=i", "c=i", "D=i", "M=s",
 		"p=f", "N=i", "w=i", "a!", "O!", "F=s", "f=f", "s=i",
 		"t=s", "o=s", "b=f", "g!", "start!", "stop=i", "nc!", 
-	       "n!", "v!" );
+		"n!", "v!", "S!" );
 
 # Properly initialize Getopt for our purposes...
 Getopt::Long::Configure("no_ignore_case");
-
-$main::version = '1.1b';
 
 if( ! GetOptions( \%opt, @options ) ) { &usage(); }
 
@@ -60,6 +58,7 @@ $main::start = 0;
 $main::stop = 0;
 $main::noncoding = 0;
 $main::graph = 0;
+$main::single = 0;
 
 &usage() if defined $opt{'help'};
 
@@ -80,6 +79,7 @@ $main::start     = $opt{'start'} if defined $opt{'start'};
 $main::stop      = $opt{'stop'}  if defined $opt{'stop'};
 $main::noncoding = $opt{'nc'}    if defined $opt{'noncoding'};
 $main::graph     = $opt{'g'}     if defined $opt{'g'};
+$main::single    = $opt{'S'}     if defined $opt{'S'};
 if (defined $opt{'t'}) {
     if ($opt{'t'} eq "-") {
 	$main::transl = \*STDOUT;
@@ -126,20 +126,20 @@ if (defined $opt{'v'}) {
 &usage() if $#ARGV < 0;
 
 # Load all the matrices.
-my @mat = ESTScan::LoadMatrix($main::matrix, "CODING", $main::percent);
-if ($main::start)     { push @mat, ESTScan::LoadMatrix($main::matrix, "START",     $main::percent); }
-if ($main::stop)      { push @mat, ESTScan::LoadMatrix($main::matrix, "STOP",      $main::percent); }
-if ($main::noncoding) { push @mat, ESTScan::LoadMatrix($main::matrix, "NONCODING", $main::percent); }
+my @mat = ESTScan1::LoadMatrix($main::matrix, "CODING", $main::percent);
+if ($main::start)     { push @mat, ESTScan1::LoadMatrix($main::matrix, "START", $main::percent); }
+if ($main::stop)      { push @mat, ESTScan1::LoadMatrix($main::matrix, "STOP", $main::percent); }
+if ($main::noncoding) { push @mat, ESTScan1::LoadMatrix($main::matrix, "NONCODING", $main::percent); }
 for my $i (0 .. $#mat) {
     my $order = $ {$mat[$i]}[3];
     my $length = $ {$mat[$i]}[4];
     my $offset = $ {$mat[$i]}[5];
     my $aRef = $ {$mat[$i]}[8];
-    my $ref = ESTScan::CreateMatrix($order, $length, $offset, $aRef, $main::min, $main::Nvalue);
+    my $ref = ESTScan1::CreateMatrix($order, $length, $offset, $aRef, $main::min, $main::Nvalue);
 }
 # Load the false positive rate matrices, unless using absolut.
 if ($main::absolut == 0) { 
-    ESTScan::LoadFPRMatrices($main::FPRMat, $main::start); 
+    ESTScan1::LoadFPRMatrices($main::FPRMat, $main::start); 
 }
 
 my $src = FASTAFile->new($ARGV[0]);
@@ -178,7 +178,7 @@ while (defined($seq = $src->getNext)) {
 
     if ($main::absolut == 0) {
 	# Find correct cutOff value
-	$main::cutoff = ESTScan::ComputeCutOff($percent, $length, $main::FPR);
+	$main::cutoff = ESTScan1::ComputeCutOff($percent, $length, $main::FPR);
     }
     my $id = "";
     my $idrev = "";
@@ -211,15 +211,21 @@ while (defined($seq = $src->getNext)) {
 	$graphName = "./$id.dat";
     }
     my @res;
-    my $bigMax = ESTScan::Compute($seq->{_seq}, $main::iPen, $main::dPen,
+    my $bigMax = ESTScan1::Compute($seq->{_seq}, $main::iPen, $main::dPen,
 				  $main::cutoff, $main::dropMax,
 				  $main::maxOnly == 0 ? \@res : undef, $matIndex,
 				  $startMatIndex, $stopMatIndex, $main::stop, 
 				  $ncMatIndex, $graphName);
+    my $result_nr = -1;
+    if ($main::single != 0) {
+	if ( $main::absolut == 0) { $bigMax = normalizedScore($bigMax); }
+	showResults($seq, \@res, $bigMax, \$result_nr, $bigMax);
+	next;
+    }
     my @resRev;
     if ($main::graph == 1) { $graphName = "$idrev.dat"; }
     my $seqRev = $seq->revComp;
-    my $bigMaxRev = ESTScan::Compute($seqRev->{_seq}, $main::iPen, $main::dPen,
+    my $bigMaxRev = ESTScan1::Compute($seqRev->{_seq}, $main::iPen, $main::dPen,
 				     $main::cutoff, $main::dropMax,
 				     $main::maxOnly == 0 ? \@resRev : undef, $matIndex,
 				     $startMatIndex, $stopMatIndex, $main::stop, 
@@ -234,7 +240,6 @@ while (defined($seq = $src->getNext)) {
 	system("rm $idrev.dat.coding $idrev.dat.start");
     }
     
-    my $result_nr = -1;
     my $theRealMax = $bigMax >= $bigMaxRev ? $bigMax : $bigMaxRev;
     if ( $main::absolut == 0) { $theRealMax = normalizedScore($theRealMax); }
     showResults($seq, \@res, $bigMax, \$result_nr, $theRealMax);
@@ -244,7 +249,7 @@ exit 0;
 
 sub usage {
     print "$main::copyright
-  Usage: ESTScan [options] <file>
+  Usage: ESTScan1 [options] <file>
   where options are:
    -m <int>     min value in matrix [$main::min]
    -d <int>     deletion penalty [$main::dPen]
@@ -273,7 +278,7 @@ sub usage {
    -stop <int>  distince within to search for stop profiles [$main::stop]
    -v           version information
 
-ESTScan returns results (coding sequences( in FASTA format adding the following 
+ESTScan1 returns results (coding sequences( in FASTA format adding the following 
 information to the header: normalized score, absolute score, cutoff, start and 
 stop position. These values are added in the cited order after the name of the
 coding sequence.\n";

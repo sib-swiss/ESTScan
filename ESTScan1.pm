@@ -1,4 +1,4 @@
-package ESTScan;
+package ESTScan1;
 #
 # Christian Iseli, LICR ITO, Christian.Iseli@licr.org
 #
@@ -17,8 +17,8 @@ require DynaLoader;
 @EXPORT = qw(
 	
 );
-$VERSION = '0.01';
-bootstrap ESTScan $VERSION;
+$VERSION = '1.3';
+bootstrap ESTScan1 $VERSION;
 
 sub LoadMatrix {
     my ($file, $type, $correction) = @_;
@@ -33,26 +33,16 @@ sub LoadMatrix {
 	    while (1) {
 		my @a;
 		while ( <FH> ) {
-		    if (/^(-?\d+)\s+(-?\d+)\s+(-?\d+)\s+(-?\d+)/) {
-			push @a, $1, $2, $3, $4;
-		    } else {
-			last;
-		    }
+		    if (/^(-?\d+)\s+(-?\d+)\s+(-?\d+)\s+(-?\d+)/) {push @a,$1,$2,$3,$4;} 
+		    else { last; }
 		}
 		last if $#a < 0;
-		if ($CGmin > 0.0) {
-		    $CGmin += $correction;
-		    if ($CGmin < 0.0) {
-			$CGmin = 0.0;
-		    }
-		}
-		if ($CGmax < 100.0) {
-		    $CGmax += $correction;
-		    if ($CGmax > 100.0) {
-			$CGmax = 100.0;
-		    }
-		}
-		push @res, [$name, $fType, $mType, $order, $period, $offset, $CGmin, $CGmax, \@a, 0];
+		if ($CGmin > 0.0) { $CGmin += $correction; }
+		if ($CGmin < 0.0) { $CGmin = 0.0; }
+		if ($CGmax < 100.0) { $CGmax += $correction; }
+		if ($CGmax > 100.0) { $CGmax = 100.0; }
+		push @res, [$name, $fType, $mType, $order, $period, $offset, 
+			    $CGmin, $CGmax, \@a, 0];
 		if (/^FORMAT: \S+ (\S+)/ && $type eq $1) {
 		    ($name, $fType, $mType, $order, $period, $offset, $CGmin, $CGmax)
 			= $_ =~ /^FORMAT: (\S+) (\S+) (\S+) (\d+) (\d+) (\d+) s C\+G: (\S+) (\S+)/;
@@ -209,11 +199,11 @@ __END__
 
 =head1 NAME
 
-ESTScan - Perl extension for coding region prediction is EST sequences.
+ESTScan1 - Perl extension for coding region prediction is EST sequences.
 
 =head1 SYNOPSIS
 
-  use ESTScan;
+  use ESTScan1;
 
 =head1 DESCRIPTION
 

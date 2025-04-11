@@ -8,10 +8,10 @@ extern "C" {
 }
 #endif
 
-#include "estscan.h"
+#include "estscan_1.h"
 
 
-MODULE = ESTScan		PACKAGE = ESTScan
+MODULE = ESTScan1		PACKAGE = ESTScan1
 PROTOTYPES: ENABLE
 
 # second parameter is a Perl Array Ref
@@ -43,7 +43,7 @@ Compute(a, b, c, d, e, f, g, h, i, j, k, l)
 	OUTPUT:
 	RETVAL
 
-# $Id: ESTScan.xs,v 1.7 2000/09/06 07:43:19 clottaz Exp $
+# $Id: ESTScan1.xs,v 1.1.1.1 2006/12/18 15:44:47 c4chris Exp $
 #
 # Christian Iseli, LICR ITO, Christian.Iseli@licr.org
 #
