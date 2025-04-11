@@ -1,6 +1,6 @@
 #!/usr/local/bin/perl 
 
-# $Id: ESTScan,v 1.26 2001/06/11 11:58:10 clottaz Exp $
+# $Id: ESTScan,v 1.28 2001/09/19 12:45:01 clottaz Exp $
 #
 # Christian Iseli, LICR ITO, Christian.Iseli@licr.org
 #
@@ -19,7 +19,7 @@ if ($ESTScanDir eq "") {
 }
 
 $main::copyright = <<EndOfMsg;
-This is ESTScan version 1.1a (June 2001)
+This is ESTScan version 1.1b (September 2001)
 Copyright (c) 1999, 2000 by the Swiss Institute of Bioinformatics.
 All rights reserved. See the file COPYRIGHT for details.
 EndOfMsg
@@ -33,7 +33,7 @@ my @options = ( "help", "m=i", "d=i", "i=i", "c=i", "D=i", "M=s",
 # Properly initialize Getopt for our purposes...
 Getopt::Long::Configure("no_ignore_case");
 
-$main::version = 1.1;
+$main::version = '1.1b';
 
 if( ! GetOptions( \%opt, @options ) ) { &usage(); }
 
@@ -378,6 +378,7 @@ sub showResults {
 	    $pSeq = BTLib::na2aa($pSeq);
 	    print $main::transl "$head; translated\n";
 	    $pSeq =~ s/(.{$main::sWidth})/$1\n/g;
+	    $pSeq =~s/\n$//; # remove trailing newline
 	    $pSeq =~ s/O$//; # remove trailing stop codon
 	    $pSeq =~ tr/O/X/; # translate intermediate stop codons by X
 	    print $main::transl "$pSeq\n";

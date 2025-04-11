@@ -1,4 +1,4 @@
-/* $Id: estscan.c,v 1.19 2000/09/13 17:04:26 clottaz Exp $
+/* $Id: estscan.c,v 1.20 2001/09/19 12:45:02 clottaz Exp $
  *
  * Christian Iseli, LICR ITO, Christian.Iseli@licr.org
  *
@@ -219,7 +219,7 @@ static void
 reconstruct(char *seq, char *trace[3], int tPos, char *res, int frame, int *start)
 {
   char *s = seq + tPos;
- char *r = res;
+  char *r = res;
   int done = 0;
   while (s >= seq && !done) {
     switch (trace[frame][tPos]) {
@@ -251,11 +251,11 @@ reconstruct(char *seq, char *trace[3], int tPos, char *res, int frame, int *star
       tPos -= 6;
       break;
     case 'b':
-      *r++ = toupper(*s); s -= 1;
-      *r++ = toupper(*s); s -= 1;
-      *r++ = toupper(*s); s -= 1;
-      *r++ = toupper(*s); s -= 1;
-      *r++ = toupper(*s); s -= 1;
+      if (*s) *r++ = toupper(*s); s -= 1;
+      if (*s) *r++ = toupper(*s); s -= 1;
+      if (*s) *r++ = toupper(*s); s -= 1;
+      if (*s) *r++ = toupper(*s); s -= 1;
+      if (*s) *r++ = toupper(*s); s -= 1;
       frame = (frame == 2) ? 0 : frame + 1;
       done = 1;
       break;
@@ -337,7 +337,7 @@ finetune_stop(char *seq, int maxPos, int stopIndex, int stopDist, char *res, int
   currFrame = 0;
   while ((ptr < from) || (currFrame != 0)) { 
     /*printf("skip %c in frame %d\n", *ptr, currFrame);/*!!!*/
-    if (*ptr < 'Z') currFrame = (currFrame + 1) % 3;
+  if (*ptr < 'Z') currFrame = (currFrame + 1) % 3;
     ptr++; 
   }
 
