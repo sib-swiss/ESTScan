@@ -1,11 +1,12 @@
-Changes
 COPYRIGHT
+ESTScan
+estscan_.c
+estscan_.h
 ESTScan.pm
 ESTScan.xs
+Hs.smat
 MANIFEST
 Makefile.PL
-estscan.c
-estscan.h
+ESTScan2.spec
+README
 test.pl
-test.exp
-ESTScan

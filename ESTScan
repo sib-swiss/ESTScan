@@ -1,18 +1,19 @@
-#!/usr/local/bin/perl 
+#!/usr/bin/env perl
 
-# $Id: ESTScan,v 1.30.2.6 2002/02/20 15:37:42 clottaz Exp $
+# $Id: ESTScan,v 1.1.1.1 2006/12/13 23:03:45 c4chris Exp $
 #
 # Christian Iseli, LICR ITO, Christian.Iseli@licr.org
 # Claudio Lottaz, SIB-ISREC, Claudio.Lottaz@isb-sib.ch
 #
-# Copyright (c) 1999, 2000 Swiss Institute of Bioinformatics. All rights reserved.
+# Copyright (c) 1999, 2000, 2006
+# Swiss Institute of Bioinformatics. All rights reserved.
 
 use strict;
 use Getopt::Long;
 use FASTAFile;
 use ESTScan;
-
-$| = 1; # Very important, otherwise get garbled output in batch mode.
+use POSIX ();
+use Symbol;
 
 my $ESTScanDir = $ENV{"ESTSCANDIR"};
 if ($ESTScanDir eq "") {
@@ -20,19 +21,18 @@ if ($ESTScanDir eq "") {
 }
 
 $main::copyright = <<EndOfMsg;
-This is ESTScan version 2.0a (February 2002)
-Copyright (c) 1999, 2000, 2001 by the Swiss Institute of Bioinformatics.
-All rights reserved. See the file COPYRIGHT for details.
+This is ESTScan $ESTScan::VERSION (December 2006)
+Copyright (c) 1999, 2000, 2001, 2006 by the Swiss Institute of Bioinformatics.
+All rights reserved.  See the file COPYRIGHT for details.
 EndOfMsg
 
 my %opt;
-my @options = ( "help", "m=i", "d=i", "T=s", "i=i", "M=s", "p=f", "N=i", "w=i", "a!", 
-		"O!", "s=i", "l=i", "t=s", "o=s", "b=f", "n!", "v!", "S!" );
+my @options = ( "help", "m=i", "d=i", "T=s", "i=i", "M=s", "p=f", "N=i",
+		"w=i", "a!", "O!", "s=i", "l=i", "t=s", "o=s", "b=f", "n!",
+		"v!", "S!", "ft=s", "cpat=s", "chrom=s", "sp=s" );
 
 # Properly initialize Getopt for our purposes...
 Getopt::Long::Configure("no_ignore_case");
-
-$main::version = '2.0a';
 
 $main::min     = -100;
 $main::dPen    = -50;
@@ -58,6 +58,7 @@ $main::out = \*STDOUT;
 $main::both = 1.0;
 $main::no_del = 0;
 $main::single = 0;
+$main::cpat = "chrom(\\w+)_r\\.seq";
 
 if( ! GetOptions( \%opt, @options ) ) { &usage(); }
 &usage() if defined $opt{'help'};
@@ -76,45 +77,54 @@ $main::minLen    = $opt{'l'}     if defined $opt{'l'};
 $main::both      = $opt{'b'}     if defined $opt{'b'};
 $main::no_del    = $opt{'n'}     if defined $opt{'n'};
 $main::single    = $opt{'S'}     if defined $opt{'S'};
+$main::ft        = $opt{'ft'}    if defined $opt{'ft'};
+$main::cpat      = $opt{'cpat'}  if defined $opt{'cpat'};
+$main::chrom     = $opt{'chrom'} if defined $opt{'chrom'};
+$main::sp        = $opt{'sp'}    if defined $opt{'sp'};
+
 if (defined $opt{'t'}) {
-    if ($opt{'t'} eq "-") {
-	$main::transl = \*STDOUT;
-    } else {
-	use Symbol;
-	my $path = $opt{'t'};
-	$main::transl = gensym;
-	if (!(open $main::transl, ">$path")) {
-	    warn "Could not create file \"$path\": $!";
-	    exit 1;
-	}
+  if ($opt{'t'} eq "-") {
+    $main::transl = \*STDOUT;
+  } else {
+    my $path = $opt{'t'};
+    $main::transl = gensym;
+    if (!(open $main::transl, ">$path")) {
+      warn "Could not create file \"$path\": $!";
+      exit 1;
     }
+  }
 }
 if (defined $opt{'o'}) {
-    if ($opt{'o'} eq "-") {
-	$main::out = \*STDOUT;
-    } else {
-	use Symbol;
-	my $path = $opt{'o'};
-	$main::out = gensym;
-	if (!(open $main::out, ">$path")) {
-	    warn "Could not create file \"$path\": $!";
-	    exit 1;
-	}
+  if ($opt{'o'} eq "-") {
+    $main::out = \*STDOUT;
+  } else {
+    my $path = $opt{'o'};
+    $main::out = gensym;
+    if (!(open $main::out, ">$path")) {
+      warn "Could not create file \"$path\": $!";
+      exit 1;
     }
+  }
 }
 if (defined $opt{'v'}) {
-    print $main::copyright;
-    exit 0;
+  print $main::copyright;
+  exit 0;
 }
 if (defined $opt{'T'}) {
-    my $nbProbs = ($opt{'T'} =~ s/,/,/g) + 1;
-    if (($nbProbs) != 8) { 
-	usage("Wrong number of transition probabilities("  . $nbProbs . ")"); 
-    }
-    ($main::ts5uPen,$main::tscPen,$main::ts3uPen,$main::t5ucPen,
-     $main::t5uePen,$main::tc3uPen,$main::tcePen,$main::t3uePen) = split(/,/,$opt{'T'});
+  my $nbProbs = ($opt{'T'} =~ s/,/,/g) + 1;
+  if (($nbProbs) != 8) { 
+    usage("Wrong number of transition probabilities("  . $nbProbs . ")"); 
+  }
+  ($main::ts5uPen, $main::tscPen, $main::ts3uPen,
+   $main::t5ucPen, $main::t5uePen, $main::tc3uPen,
+   $main::tcePen, $main::t3uePen) = split /,/, $opt{'T'};
 }
 &usage() if $#ARGV < 0;
+
+local *FT;
+if (defined $main::ft) {
+  open FT, ">$main::ft" or die "Couldn't create file $main::ft: $!";
+}
 
 # Load all the matrices.
 my @mat = ESTScan::LoadMatrix($main::matrix, "CODING", $main::percent);
@@ -126,72 +136,88 @@ my $firstStopPf = $#mat + 1;
 push @mat, ESTScan::LoadMatrix($main::matrix, "STOP", $main::percent);
 my $lastMat = $#mat + 1;
 for my $i (0 .. $#mat) {
-    my $matType = -1;
-    if ($ {$mat[$i]}[1] eq 'CODING')       { $matType = 0; }
-    if ($ {$mat[$i]}[1] eq 'UNTRANSLATED') { $matType = 1; }
-    if ($ {$mat[$i]}[1] eq 'START')        { $matType = 2; }
-    if ($ {$mat[$i]}[1] eq 'STOP')         { $matType = 3; }
-    my $order = $ {$mat[$i]}[3];
-    my $length = $ {$mat[$i]}[4];
-    my $offset = $ {$mat[$i]}[5];
-    my $CGmin = int($ {$mat[$i]}[6]);
-    my $CGmax = int($ {$mat[$i]}[7]);
-    my $aRef = $ {$mat[$i]}[8];
-    my $ref=ESTScan::CreateMatrix($matType, $order, $length, $offset, $CGmin, $CGmax,
-				  $aRef, $main::min, $main::Nvalue);
+  my $matType = -1;
+  $matType = 0 if $ {$mat[$i]}[1] eq 'CODING';
+  $matType = 1 if $ {$mat[$i]}[1] eq 'UNTRANSLATED';
+  $matType = 2 if $ {$mat[$i]}[1] eq 'START';
+  $matType = 3 if $ {$mat[$i]}[1] eq 'STOP';
+  my $order = $ {$mat[$i]}[3];
+  my $length = $ {$mat[$i]}[4];
+  my $offset = $ {$mat[$i]}[5];
+  my $CGmin = int($ {$mat[$i]}[6]);
+  my $CGmax = int($ {$mat[$i]}[7]);
+  my $aRef = $ {$mat[$i]}[8];
+  my $ref = ESTScan::CreateMatrix($matType, $order, $length, $offset, $CGmin,
+	  			  $CGmax, $aRef, $main::min, $main::Nvalue);
 }
-ESTScan::StoreTransits($main::ts5uPen,$main::tscPen,$main::ts3uPen,$main::t5ucPen,
-		       $main::t5uePen,$main::tc3uPen,$main::tcePen,$main::t3uePen);
+ESTScan::StoreTransits($main::ts5uPen, $main::tscPen, $main::ts3uPen, 
+		       $main::t5ucPen, $main::t5uePen, $main::tc3uPen,
+		       $main::tcePen, $main::t3uePen);
 
-my $src = FASTAFile->new($ARGV[0]);
-$src->openStream;
-my $seq;
-#my $seqCtr = 0;
-while (defined($seq = $src->getNext)) {
-#    print STDERR "$seqCtr sequences done\n"; $seqCtr++;
+my $curChrom = $main::chrom;
+while ($#ARGV >= 0) {
+  my $src = FASTAFile->new($ARGV[0]);
+  unless (defined $main::chrom) {
+    ($curChrom) = $ARGV[0] =~ /$main::cpat/;
+  }
+  shift @ARGV;
+  $src->openStream;
+  my $seq;
+  while (defined($seq = $src->getNext)) {
     my $length = $seq->seqLength;
     next if $length < $main::skipLen;
     my $percent = ESTScan::ComputeGC($seq->{_seq});
-    if ($percent == 0) { next; }
-#    print "percent is $percent, C says $newpercent\n";
+    next if $percent == 0;
 
     # Find the correct matrices.
     my $matIndex = FindMatrix(0, $firstUntranslated, $percent, \@mat);
-    if ($matIndex == -1) { warn "No CDS matrix found for $percent % GC."; next; }
-    my $utrMatIndex = FindMatrix($firstUntranslated, $firstStartPf, $percent, \@mat);
-    if ($utrMatIndex == -1) { warn "No UTR matrix found for $percent % GC."; }
-    my $startMatIndex = FindMatrix($firstStartPf, $firstStopPf, $percent, \@mat);
-    if ($startMatIndex == -1) { warn "No start matrix found for $percent % GC."; }
+    if ($matIndex == -1) {
+      warn "No CDS matrix found for $percent % GC.";
+      next;
+    }
+    my $utrMatIndex = FindMatrix($firstUntranslated, $firstStartPf,
+				 $percent, \@mat);
+    if ($utrMatIndex == -1) {
+      warn "No UTR matrix found for $percent % GC.";
+    }
+    my $startMatIndex = FindMatrix($firstStartPf, $firstStopPf,
+				   $percent, \@mat);
+    if ($startMatIndex == -1) {
+      warn "No start matrix found for $percent % GC.";
+    }
     my $stopMatIndex = FindMatrix($firstStopPf, $lastMat, $percent, \@mat);
-    if ($stopMatIndex == -1) { warn "No stop matrix found for $percent % GC."; }
-
+    if ($stopMatIndex == -1) {
+      warn "No stop matrix found for $percent % GC.";
+    }
     my @res;
-    my $bigMax = ESTScan::Compute($seq->{_seq}, $main::iPen, $main::dPen, $main::min,
-				  $main::maxOnly == 0 ? \@res : undef, $matIndex,
-				  $utrMatIndex, $startMatIndex, $stopMatIndex, 
-				  $main::minLen);
+    my $bigMax = ESTScan::Compute($seq->{_seq}, $main::iPen, $main::dPen,
+				  $main::min,
+				  $main::maxOnly == 0 ? \@res : undef,
+				  $matIndex, $utrMatIndex, $startMatIndex,
+				  $stopMatIndex, $main::minLen);
     my $result_nr = -1;
     if ($main::single != 0) {
-	showResults($seq, \@res, $bigMax, \$result_nr, $bigMax);
-	next;
+      showResults($seq, \@res, $bigMax, \$result_nr, $bigMax);
+      next;
     }
     my @resRev;
     my $seqRev = $seq->revComp;
-    my $bigMaxRev = ESTScan::Compute($seqRev->{_seq},$main::iPen,$main::dPen,$main::min,
-				     $main::maxOnly == 0 ? \@resRev : undef, $matIndex, 
-				     $utrMatIndex, $startMatIndex, $stopMatIndex, 
-				     $main::minLen);
-   
+    my $bigMaxRev = ESTScan::Compute($seqRev->{_seq}, $main::iPen, $main::dPen,
+				     $main::min,
+				     $main::maxOnly == 0 ? \@resRev : undef,
+				     $matIndex, $utrMatIndex, $startMatIndex,
+				     $stopMatIndex, $main::minLen);
     my $theRealMax = $bigMax >= $bigMaxRev ? $bigMax : $bigMaxRev;
     showResults($seq, \@res, $bigMax, \$result_nr, $theRealMax);
     showResults($seqRev, \@resRev, $bigMaxRev, \$result_nr, $theRealMax);
+  }
 }
 exit 0;
 
 sub usage {
-    my($msg) = @_;
-    print "$main::copyright
-  Usage: ESTScan [options] <file>
+  my($msg) = @_;
+  print STDERR "$main::copyright
+Usage: ESTScan [options] <file> ...
   where options are:
    -m <int>     min value in matrix [$main::min]
    -d <int>     deletion penalty [$main::dPen]
@@ -217,108 +243,441 @@ sub usage {
    -o <file>    send output to file.  - means stdout.  If both -t and -o specify
                 stdout, only proteins will be written.
    -s <int>     Skip sequences shorter than length [$main::skipLen]
+   -ft <file>   creates separate file containing information about frameshift
+                positions etc from ESTScan.
+   -cpat <str>  RE pattern to determine chromosome name from the current
+                input file name, used in the ft file [$main::cpat]
+   -chrom <str> chromosome name, used in the ft file (overrides -cpat)
+   -sp <str>    species name, used in the ft file
    -v           version information
 
 ESTScan returns results (coding sequences) in FASTA format adding the
 score as well as the positions of predicted start and stop sites to
 the header. These values are added in the cited order after the name
 of the coding sequence.\n"; 
-    if ($msg) { print "\n$msg\n"; }
-    exit 1; 
+  print "\n$msg\n" if $msg;
+  exit 1; 
 }
 
 sub FindMatrix {
-    my ($from, $next, $percent, $mat) = @_;
-    my $i;
-    for ($i = $from; $i < $next; $i++) {
-	if ($percent >= ${$$mat[$i]}[6] && $percent <= ${$$mat[$i]}[7]) { return( $i );
-	}
+  my ($from, $next, $percent, $mat) = @_;
+  my $i;
+  for ($i = $from; $i < $next; $i++) {
+    if ($percent >= ${$$mat[$i]}[6] && $percent <= ${$$mat[$i]}[7]) {
+      return( $i );
     }
-    return -1;
+  }
+  return -1;
 }
-
-sub normalizedScore {
-    my ($score) = @_;
-    my $frac = $score / $main::cutoff;
-    if ($frac == 0.0) {
-	$frac = 0.000001;
-    }
-    $score = log ($frac);
-    return sprintf "%.1f", $score * 100.0;
-}
-
+  
 sub showResults {
-    my ($seq, $rres, $bigMax, $cnt, $theRealMax) = @_;
-    if ($main::maxOnly != 0) {
-	my $head = $seq->seqHead;
-	$head =~ s/^(\S+)/$1 $bigMax/;
-	if (($theRealMax * $main::both <= $bigMax) && ($$cnt == -1)) { 
-	    print $main::out "$head\n";
-	    $$cnt += 1;
-	}
-	return;
+  my ($seq, $rres, $bigMax, $cnt, $theRealMax) = @_;
+  if ($main::maxOnly != 0) {
+    my $head = $seq->seqHead;
+    $head =~ s/^(\S+)/$1 $bigMax/;
+    if (($theRealMax * $main::both <= $bigMax) && ($$cnt == -1)) { 
+      print $main::out "$head\n";
+      $$cnt += 1;
     }
-    if ($main::all == 1 && $#$rres >= 0) {
-	my $scores = "";
-	my $outSeq = "";
-	my $lastPos = 0;
-	foreach my $r (@$rres) {
-	    my $curScore = $$r[0];
-	    $scores .= $curScore . " ";
-	    if ($theRealMax * $main::both > $curScore) { next; }
-	    if ($$r[1] > $lastPos) {
-		my $s = substr($seq->{_seq}, $lastPos, $$r[1] - $lastPos);
-		$s =~ tr/A-Z/a-z/;
-		$outSeq .= $s;
-	    }
-	    $outSeq .= $$r[3];
-	    $lastPos = $$r[2] + 1;
-	}
-	if ($lastPos < $seq->seqLength) {
-	    my $s = substr($seq->{_seq}, $lastPos);
-	    $s =~ tr/A-Z/a-z/;
-	    $outSeq .= $s;
-	}
-	my $head = $seq->seqHead;
-	$head =~ s/^(\S+)/$1 $scores/;
-	print $main::out "$head\n";
-	$outSeq =~ s/(.{$main::sWidth})/$1\n/g;
-	$outSeq =~ s/\s+$//; # remove a trailing newline, since we add one below.
-	print $main::out "$outSeq\n";
-	return;
-    }
+    return;
+  }
+  if ($main::all == 1 && $#$rres >= 0) {
+    my $scores = "";
+    my $outSeq = "";
+    my $lastPos = 0;
     foreach my $r (@$rres) {
-	my $score = $$r[0];
-	if ($theRealMax * $main::both > $score) { next; }
- 
-	# Should remove lower cases if we want to create a correct sequence.
-	my $rSeq = $$r[3];
-	my $head = $seq->seqHead;
-	if ($$cnt >= 0) {
-	    my $c = chr(ord("a") + $$cnt);
-	    $head =~ s/^([^|]+)\|([^| ]+)/$1|$2$c/;
-	}
-	$$cnt += 1;
-	my $start = $$r[1] + 1;
-	my $end = $$r[2] + 1;
-	$head =~ s/^(\S+)/$1 $$r[0] $start $end /;
-	if (defined $main::transl) {
-	    my $pSeq = $rSeq;
-	    $pSeq =~ s/[acgt]//g; # Remove lowercases...
-	    $pSeq = BTLib::na2aa($pSeq);
-	    print $main::transl "$head; translated\n";
-	    $pSeq =~ s/(.{$main::sWidth})/$1\n/g;
-	    $pSeq =~s/\n$//; # remove trailing newline
-	    $pSeq =~ s/O$//; # remove trailing stop codon
-	    $pSeq =~ tr/O/X/; # translate intermediate stop codons by X
-	    print $main::transl "$pSeq\n";
-	    next if $main::transl == \*STDOUT && $main::out == \*STDOUT;
-	}
-	print $main::out "$head\n";
-	if ($main::no_del) { $rSeq =~ s/[acgt]//g; }
-	$rSeq =~ s/(.{$main::sWidth})/$1\n/g;
-	$rSeq =~ s/\s+$//; # remove a trailing newline, since we add one below.
-	print $main::out "$rSeq\n";
+      my $curScore = $$r[0];
+      $scores .= $curScore . " ";
+      next if $theRealMax * $main::both > $curScore;
+      if ($$r[1] > $lastPos) {
+	my $s = substr $seq->{_seq}, $lastPos, $$r[1] - $lastPos;
+	$s =~ tr/A-Z/a-z/;
+	$outSeq .= $s;
+      }
+      $outSeq .= $$r[3];
+      $lastPos = $$r[2] + 1;
     }
+    if ($lastPos < $seq->seqLength) {
+      my $s = substr $seq->{_seq}, $lastPos;
+      $s =~ tr/A-Z/a-z/;
+      $outSeq .= $s;
+    }
+    my $head = $seq->seqHead;
+    $head =~ s/^(\S+)/$1 $scores/;
+    print $main::out "$head\n";
+    $outSeq =~ s/(.{$main::sWidth})/$1\n/g;
+    $outSeq =~ s/\s+$//; # remove a trailing newline, since we add one below.
+    print $main::out "$outSeq\n";
+    return;
+  }
+  foreach my $r (@$rres) {
+    my $score = $$r[0];
+    next if $theRealMax * $main::both > $score;
+    # Should remove lower cases if we want to create a correct sequence.
+    my $rSeq = $$r[3];
+    my $head = $seq->seqHead;
+    my ($sense, $species, $length_tr, $exons, @exons, $st_id,
+	$id_nt, $positions, $gn, $de, @positions, @exon_positions);
+    if ($head =~ /^>map/) {
+      $head =~ /^>map\|[^|]+\|([^|]+)\|(\S)[^|E]+([^|]+)\s+(\S+)\[(((\d+..\d+,)+\d+..\d+)|(\d+..\d+))\]\s+(.+)/;
+      $st_id = $1;
+      $sense = $2;
+      $exons = $3;
+      $id_nt = $4;
+      $positions = $5;
+      $gn = $9;
+      if (defined $main::sp) {
+	$species = "[$main::sp] ";
+      }
+      $id_nt =~ s/\.\d+//;
+      @exons = split /,/, $exons;
+      $positions =~ s/\.\./\t/g;
+      $positions =~ s/\,/\n/g;
+      @positions = split /\n/, $positions;
+      $gn =~ s/unkn[^|]+/Unknown protein/;
+      $gn =~ s/ LEN=[^|]+//;
+      $gn =~ s/ minus strand//;
+      $gn =~ s/\s\S+,\S+//;
+      $de = "DE\tChromosome $curChrom; Strand: $sense; Transcript: $id_nt\[";
+      for my $i (0 .. $#exons) {
+	my @F = split /\t/, $positions[$i];
+	if ($sense eq "+") {
+	  push @exon_positions,
+	    $exons[$i] . "\t" . $F[0] . "\t" . $F[1] . "\t\n";
+	} else {
+       	  unshift @exon_positions,
+	    $exons[$i] . "\t" . $F[1] . "\t" . $F[0] . "\t\n";
+	}
+      } 
+    }
+    my $single = $#exon_positions;
+    if ($$cnt >= 0) {
+      my $c = chr(ord("a") + $$cnt);
+      $head =~ s/^([^|]+)\|([^| ]+)/$1|$2$c/;
+    }
+    $$cnt += 1;
+    my $start = $$r[1] + 1;
+    my $end = $$r[2] + 1;
+    my $first = $start;
+    my $last = $end;
+    if ($head =~ /^>map/) {
+      $head =~ s/^(\S+)/$1 $species Chromosome $curChrom, $$r[0] $start $end /;
+    } else {
+      $head =~ s/^(\S+)/$1 $$r[0] $start $end /;
+    }
+    if (defined $main::transl) {
+      if (defined $main::ft) {
+	if ($head =~ /^>map/) {
+	  print FT "$id_nt\n";
+	} else {
+	  print FT $seq->ac, "\n";
+	}
+      }
+      my $pSeq = $rSeq;
+      my $nb_mut1 = $pSeq =~ tr/agct/agct/;
+      my $insert1 = $pSeq =~ tr/X/X/;
+      $length_tr = $last - $first + 1 + $insert1 - $nb_mut1;
+      my %ft = ();
+      if (defined $main::ft) {
+	my ($j, $start_ex, $end_ex, $pos, $pos1, $pos2, $corr, $insert2,
+	    $nb_mut2, $flag, $flag2, $test, $tr_start, $tr_end)
+	  = (1,1,0,0,0,0,0,0,0,0,0,0,0);
+	for (my $i = 0; $i < length $pSeq; $i++) {
+	  if ($head =~ /^>map/) {
+	    my $mod;
+	    my @F = split /\t/, $exon_positions[0];
+	    $test = abs($F[2] - $F[1]) + 1;
+	    while ($test < $first) {
+	      shift @exon_positions;
+	      @F = split /\t/, $exon_positions[0];
+	      $first = $first - $test;
+    	      $test = abs($F[2] - $F[1]) + 1;
+	    }
+	    if ($sense eq "+" && $end_ex == 0) {
+	      $tr_start = $F[1] + $first - 1;
+	    }
+	    if ($sense eq "-" && $end_ex == 0) {
+	      $tr_start = $F[1] - $first + 1;
+	    }
+	    if ($flag == 0) {
+	      $end_ex = $end_ex + abs($F[2] - $F[1]) - $first
+		+ $insert2 - $nb_mut2 + 2;
+	    }
+	    if ($#exon_positions == 0 || $end_ex >= length $pSeq) {
+      	      $end_ex = length $pSeq;
+	      $flag = $flag2 = 1;
+	    }
+	    if ($end_ex == $i+1) {
+	      if ($start_ex == 1) {
+		$de .= "$F[1]..$F[2], ";
+	      }
+      	      if ($flag2 == 0 && $start_ex > 1) {
+		$de .= "$F[1]..$F[2], ";
+	      }
+      	      if ($sense eq "+" && $flag2 == 1) {
+		if ($mod == 0) {
+		  $tr_end = $F[1] + ($length_tr - $start_ex);
+		}
+		if ($mod == 1) {
+		  $tr_end = $F[1] + ($length_tr - $start_ex) + 2;
+		}
+		if ($mod == 2) {
+		  $tr_end = $F[1] + ($length_tr - $start_ex) + 1;
+		}
+		if ($single > 0) {
+		  $de .= "$F[1]..$F[2]\]; $gn\n";
+		}
+	       	if ($single == 0) {
+      		  $de =~ s/,\s$/\]; $gn\n/;
+		}
+	      }
+	      if ($sense eq "-" && $flag2 == 1) {
+		if ($mod == 0) {
+		  $tr_end = $F[1] - ($length_tr - $start_ex);
+		}
+		if ($mod == 1) {
+		  $tr_end = $F[1] - ($length_tr - $start_ex) + 2;
+		}
+		if ($mod == 2) {
+		  $tr_end = $F[1] - ($length_tr - $start_ex) + 1;
+		}
+		if ($single > 0) {
+		  $de .= "$F[1]..$F[2]\]; $gn\n";
+		}
+	       	if ($single == 0) {
+      		  $de =~ s/,\s$/\]; $gn\n/;
+		}
+	      }
+	      my $length_nt = $end_ex - $start_ex + 1 - $nb_mut2;
+	      if ($start_ex == 1) {
+	      	$length_nt -= $corr * 3;
+	      }
+      	      $first = 1;
+	      $mod = $length_nt % 3;
+	      $pos1 = POSIX::ceil($start_ex / 3);
+	      if ($pos1 > 1) {
+		$pos1 -= $corr;
+	      }
+      	      $pos2 = POSIX::floor(($end_ex - $nb_mut2) / 3);
+	      $pos2 -= $corr;
+	      $corr = 0;
+	      if ($pos2 > POSIX::floor($length_tr / 3)) {
+		$pos2 = POSIX::floor($length_tr / 3);
+	      }
+      	      my ($base1, $base2, $base3, $codon1, $codon2, $aa);
+	      unless ($mod == 0) {
+		if (substr($pSeq, $i - $mod + 1, 3) =~ /a|g|c|t/) {
+		  if (substr($pSeq, $i - $mod + 1, 1) =~ /a|g|c|t/) {
+		    $base1 = substr $pSeq, $i - $mod + 2, 1;
+		    $base2 = substr $pSeq, $i - $mod + 3, 1;
+		    $base3 = substr $pSeq, $i - $mod + 4, 1;
+		  }
+		  if (substr($pSeq, $i - $mod + 2, 1) =~ /a|g|c|t/) {
+		    $base1 = substr $pSeq, $i - $mod + 1, 1;
+		    $base2 = substr $pSeq, $i - $mod + 3, 1;
+		    $base3 = substr $pSeq, $i - $mod + 4, 1;
+		  }
+		  if (substr($pSeq, $i-$mod + 3, 1) =~ /a|g|c|t/) {
+		    $base1 = substr $pSeq, $i - $mod + 1, 1;
+		    $base2 = substr $pSeq, $i - $mod + 2, 1;
+		    $base3 = substr $pSeq, $i - $mod + 4, 1;
+		  }
+		} else {
+	       	  $base1 = substr $pSeq, $i - $mod + 1, 1;
+      		  $base2 = substr $pSeq, $i - $mod + 2, 1;
+		  $base3 = substr $pSeq, $i - $mod + 3, 1;
+		}
+		if ($mod == 1) {
+		  $codon1 = lc $base1;
+		  $codon2 = lc($base2 . $base3);
+		} else {
+		  $codon1 = lc($base1 . $base2);
+	      	  $codon2 = lc $base3; 
+      		}
+		$aa = $codon1 . $codon2;
+		$aa = BTLib::na2aa($aa);
+	      }
+	      if ($sense eq "+" && $length_nt > 3) {
+		if (defined @{$ft{$pos1}}) {
+		  unshift @{$ft{$pos1}}, "\n";
+		} else {
+		  if ($start_ex == 1) {
+	      	    if ($single > 0) {
+      		      push @{$ft{$pos1}},
+			sprintf (
+			  "%-8s %6d %6d %5s %-41s",
+			  "EXON", $pos1, $pos2, "",
+			  "Exon: $F[0]; $id_nt\[$tr_start..$F[2]\].");
+		    } elsif ($single == 0) {
+		      unshift @{$ft{$pos1}},
+			sprintf (
+			  "%-8s %6d %6d %5s %-41s",
+			  "EXON", $pos1, $pos2, "",
+			  "Exon: $F[0]; $id_nt\[$tr_start..$tr_end\].");
+		    }
+		  } elsif ($start_ex > 1) {
+		    if ($flag2 == 0) {
+		      unshift @{$ft{$pos1}},
+			sprintf (
+			  "%-8s %6d %6d %5s %-41s",
+			  "EXON", $pos1, $pos2, "",
+			  "Exon: $F[0]; $id_nt\[$F[1]..$F[2]\].");
+		    } elsif ($flag2 == 1) {
+		      unshift @{$ft{$pos1}},
+			sprintf (
+			  "%-8s %6d %6d %5s %-41s",
+			  "EXON", $pos1, $pos2, "",
+			  "Exon: $F[0]; $id_nt\[$F[1]..$tr_end\].");
+		    }
+		  }
+		}
+	      }
+	      if ($sense eq "-" && $length_nt > 3) {
+		if (defined @{$ft{$pos1}}) {
+		  unshift @{$ft{$pos1}}, "\n";
+		} else {
+		  if ($start_ex == 1) {
+		    if ($single > 0) {
+		      push @{$ft{$pos1}},
+			sprintf (
+			  "%-8s %6d %6d %5s %-41s",
+			  "EXON", $pos1, $pos2, "",
+			  "Exon: $F[0]; $id_nt\[$F[2]..$tr_start\].");
+		    } elsif ($single == 0) {
+		      push @{$ft{$pos1}},
+			sprintf (
+			  "%-8s %6d %6d %5s %-41s",
+			  "EXON", $pos1, $pos2, "",
+			  "Exon: $F[0]; $id_nt\[$tr_end..$tr_start\].");
+		    }
+		  } elsif ($start_ex > 1) {
+		    if ($flag2 == 0) {
+		      push @{$ft{$pos1}},
+			sprintf (
+			  "%-8s %6d %6d %5s %-41s",
+			  "EXON", $pos1, $pos2, "",
+			  "Exon: $F[0]; $id_nt\[$F[2]..$F[1]\].");
+		    } elsif ($flag2 == 1) {
+		      push @{$ft{$pos1}},
+			sprintf (
+			  "%-8s %6d %6d %5s %-41s",
+			  "EXON", $pos1, $pos2, "",
+			  "Exon: $F[0]; $id_nt\[$tr_end..$F[1]\].");
+		    }
+		  }
+		}
+	      }
+	      if ($flag == 0 && $mod != 0) {
+		if ($aa ne "O") {
+		  if (defined @{$ft{$pos2}}) {
+		    push @{$ft{$pos2}}, "\n";
+		  } 
+		  push @{$ft{$pos2}},
+		    sprintf (
+		      "%-8s %6d %6d %5s %-41s",
+		      "EXON", $pos2 + 1, $pos2 + 1, "",
+		      "AA on splice site: $codon1/$codon2 -> $aa.");
+		}
+		$start_ex = $start_ex + $length_nt + 3 - $mod;
+	      }
+	      shift @exon_positions;
+	      if ($mod == 0) {
+		$start_ex = $start_ex + $length_nt;
+	      }
+	    } else {
+	      if ($flag == 0) {
+		$end_ex = $end_ex - abs($F[2] - $F[1])
+		  + $first - $insert2 + $nb_mut2 - 2;
+	      }
+	    }
+	  }
+	  if (substr($pSeq, $i, 1) =~ /a|g|c|t/){
+	    $pos = POSIX::ceil($j / 3);
+	    $pos -= $corr;
+	    $nb_mut2++;
+	    if ($pos < 8) {
+	      $start = 1;
+	    } else {
+	      $start = $pos - 7;
+	    }
+	    if (defined @{$ft{$pos}}) {
+	      push @{$ft{$pos}}, "\n";
+	    }
+	    push @{$ft{$pos}},
+	      sprintf (
+		"%-8s %6d %6d %5s %-41s",
+		"UNSURE", $start, $pos, "",
+		"Frameshift error at pos.: $pos; base deleted: "
+		  . substr($pSeq, $i, 1) . ".");
+	    $j -= 1;
+	  }
+	  if (substr($pSeq, $i, 1) eq "X"){
+	    $pos = POSIX::ceil($j / 3);
+	    $pos -= $corr;
+	    if ($pos > 1) {
+	      $insert2++;
+	      if ($pos < 8) {
+		$start = 1;
+	      } else {
+		$start = $pos - 7;
+	      }
+	      if (defined @{$ft{$pos}}) {
+		push @{$ft{$pos}}, "\n";
+	      }
+	      push @{$ft{$pos}},
+		sprintf (
+		  "%-8s %6d %6d %5s %-41s",
+		  "UNSURE", $start, $pos, "",
+		  "Frameshift error at pos.: $pos; base inserted: X.");
+	    } else {
+	      $i += 2;
+	      $j += 2;
+	      $insert2 = substr($pSeq, 0, 3) =~ tr/X/X/;
+	      $corr = 1;
+	    }
+	  }
+	  $j += 1;
+	}
+      }
+      $pSeq =~ s/[acgt]//g; # Remove lowercases...
+      $pSeq = BTLib::na2aa($pSeq);
+      $head =~ s/map/to/;
+      print $main::transl "$head; translated\n";
+      $pSeq =~ s/O+$//; # remove trailing stop codon(s)
+      if (defined $main::ft) {
+	my $j = 0;
+	$de =~ s/,\s$/\]; $gn\n/;
+	print FT $de;
+	if ($head =~ /^>to/) {
+	  print FT "AC\t" . $st_id . "\n";
+	}	
+	for my $i (0 .. length($pSeq) - 1) {
+	  my $aa = substr $pSeq, $i, 1;
+	  if (defined @{$ft{$j}}) {
+	    print FT @{$ft{$j}}, "\n";
+	  }
+	  if ($aa eq "O"){
+	    printf FT (
+	      "%-8s %6d %6d %5s %-41s\n",
+	      "UNSURE", $j, $j, "",
+	      "Internal stop codon.");
+	  }
+	  $j += 1;
+	}
+      }
+      $pSeq =~ tr/O/X/; # translate intermediate stop codons by X
+      $pSeq =~ s/(.{$main::sWidth})/$1\n/g;
+      $pSeq =~s/\s+$//; # remove trailing newline
+      print $main::transl "$pSeq\n";
+      print FT "//\n";
+      next if $main::transl == \*STDOUT && $main::out == \*STDOUT; 
+    }
+    print $main::out "$head\n";
+    if ($main::no_del) {
+      $rSeq =~ s/[acgt]//g;
+    }
+    $rSeq =~ s/(.{$main::sWidth})/$1\n/g;
+    $rSeq =~ s/\s+$//; # remove a trailing newline, since we add one below.
+    print $main::out "$rSeq\n";
+  }
 }
-

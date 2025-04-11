@@ -3,24 +3,15 @@
 
 Copyright (c) Swiss Institute of Bioinformatics, Ludwig Institute for
 Cancer Research (LICR), and Swiss Institute for Experimental Cancer
-Research (ISREC), 1999. For the purposes of this copyright, the Swiss
-Institute of Bioinformatics acts on behalf of its partners, LICR and
-ISREC.
+Research (ISREC), 1999, 2004, 2006. For the purposes of this copyright, the
+Swiss Institute of Bioinformatics acts on behalf of its partners, LICR
+and ISREC.
 
-The ESTScan software is the exclusive property of the copyright
-owners, at chemin des Boveresses 155, CH-1066 EPALINGES, Switzerland,
-and is for the private internal use by academic and commercial
-users. The ESTScan program may not be copied, sold or incorporated in
-any other software product for sale without a license from the Swiss
-Institute of Bioinformatics. The Swiss Institute of Bioinformatics
-provides the ESTScan program WITHOUT ANY WARRANTY OF MERCHANTABILITY
-OR FITNESS FOR ANY PARTICULAR PURPOSE, OR ANY OTHER WARRANTY, EXPRESS
-OR IMPLIED.
-
-This copyright does not extend to the parameter files from the GENSCAN
-program (HumanIso.smat, Maize.smat, Arabidopsis.smat) which are
-distributed with ESTScan for the sole convenience of its users.  These
-files are Copyright (c) Christopher Burge, 1997.
+The ESTScan software is the exclusive property of the copyright owners, at
+Universite de Lausanne, Batiment Genopode, CH-1015 LAUSANNE, Switzerland.  The
+Swiss Institute of Bioinformatics provides the ESTScan program WITHOUT ANY
+WARRANTY OF MERCHANTABILITY OR FITNESS FOR ANY PARTICULAR PURPOSE, OR ANY
+OTHER WARRANTY, EXPRESS OR IMPLIED.
 
 
 License Terms:
@@ -57,7 +48,8 @@ if each of the following conditions is met:
    forth as above, in the documentation and/or other materials
    provided with the distribution.  For the purposes of binary distribution
    the "Copyright Notice" refers to the following language:
-   "Copyright (c) 1999 Swiss Institute of Bioinformatics. All rights reserved."
+   "Copyright (c) 1999, 2004, 2006 Swiss Institute of Bioinformatics.
+    All rights reserved."
 
 4. Neither the name of the Swiss Institute of Bioinformatics nor
    the names of its contributors may be used to endorse or promote
@@ -68,7 +60,7 @@ if each of the following conditions is met:
    Swiss Institute of Bioinformatics on certain embedded code, whose copyright
    notice and conditions for redistribution are as follows:
 
-   (a) Copyright (c) 1999 Swiss Institute of Bioinformatics.
+   (a) Copyright (c) 1999, 2004, 2006 Swiss Institute of Bioinformatics.
        All rights reserved.
 
    (b) Redistribution and use in source and binary forms, with or without
@@ -96,5 +88,5 @@ if each of the following conditions is met:
     GENSCAN program must include a reference to the following article:
     Burge C, Karlin S, J Mol Biol 1997 268:78-94
 
-($Id: COPYRIGHT,v 1.1 1999/03/30 15:16:38 cvs Exp $
-Version 1.0, last updated 16 March 1999)
+($Id: COPYRIGHT,v 1.1.1.1 2006/12/13 23:03:44 c4chris Exp $
+Version 1.2, last updated 11 December 2006)

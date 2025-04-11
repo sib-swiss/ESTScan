@@ -17,7 +17,7 @@ require DynaLoader;
 @EXPORT = qw(
 	
 );
-$VERSION = '0.01';
+$VERSION = '2.1';
 bootstrap ESTScan $VERSION;
 
 sub LoadMatrix {

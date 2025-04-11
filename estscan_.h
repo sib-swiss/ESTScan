@@ -1,4 +1,4 @@
-/* $Id: estscan.h,v 1.5.2.3 2002/02/20 12:24:14 clottaz Exp $
+/* $Id: estscan_.h,v 1.2 2006/12/14 23:59:58 c4chris Exp $
  *
  * Christian Iseli, LICR ITO, Christian.Iseli@licr.org
  *
@@ -13,6 +13,7 @@
 #include "XSUB.h"
 
 extern int CreateMatrix(int, int, int, int, int, int, SV *, int, int);
-extern double ComputeGC(char *);
+extern double ComputeGC(const char *);
 extern int StoreTransits(int, int, int, int, int, int, int, int);
-extern int Compute(char *, int, int, int, SV *, int, int, int, int, int);
+extern int Compute(const char *, int, int, int, SV *,
+		   int, int, int, int, int);

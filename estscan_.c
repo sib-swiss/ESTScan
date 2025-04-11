@@ -1,14 +1,17 @@
-/* $Id: estscan.c,v 1.20.2.8 2002/02/20 12:24:13 clottaz Exp $
+/* $Id: estscan_.c,v 1.2 2006/12/14 23:59:58 c4chris Exp $
  *
  * Christian Iseli, LICR ITO, Christian.Iseli@licr.org
  *
  * Copyright (c) 1999 Swiss Institute of Bioinformatics. All rights reserved.
  */
-#include "estscan.h"
+#include "estscan_.h"
 #include <stdio.h>
 #include <limits.h>
 #ifndef __GNUC__
 #include <alloca.h>
+#endif
+#if !defined(__GNUC__) && defined(sun)
+#define inline
 #endif
 
 #define __noDEBUG
@@ -57,6 +60,7 @@ checkMGSpace(void)
   }
 }
 
+#ifdef __DEBUG
 static void
 printIndex(int index, int len)
 {
@@ -77,6 +81,7 @@ printIndex(int index, int len)
   printf("%s", s);
   free(s);
 }
+#endif /* __DEBUG */
 
 int
 CreateMatrix(int matType, int order, int frames, int offset, int CGmin, int CGmax,
@@ -139,7 +144,7 @@ CreateMatrix(int matType, int order, int frames, int offset, int CGmin, int CGma
 	  } else {
 	    /* Something a bit more funky...  */
 	    for (k = 0; k < stepping - 1; k++) {
-	      int avg;
+	      int avg = 0;
 	      int sorted[4];
 	      sorted[0] = *(ptr - stepping);
 	      sorted[1] = *(ptr - stepping * 2);
@@ -202,10 +207,11 @@ StoreTransits(int ts5u, int tsc, int ts3u, int t5uc,
   tc3uPen = tc3u;
   tcePen = tce;
   t3uePen = t3ue;  
+  return 0;
 }
 
 inline int
-GetCode(char c)
+GetCode(unsigned char c)
 {
   c &= 0x1f; /* Get lower bits, get rid of upper/lower info.  */
   switch (c) {
@@ -218,13 +224,13 @@ GetCode(char c)
 }
 
 double
-ComputeGC(char *s)
+ComputeGC(const char *s)
      /* determine matrix indices according to GC-content */
 {
   int ctr[256], gc, atgc;
   ctr['a'] = 0; ctr['A'] = 0; ctr['c'] = 0; ctr['C'] = 0; 
   ctr['g'] = 0; ctr['G'] = 0; ctr['t'] = 0; ctr['T'] = 0; 
-  while(*s) ctr[*s++]++;
+  while(*s) ctr[(unsigned char) *s++]++;
   gc = ctr['g'] + ctr['G'] + ctr['c'] + ctr['C']; 
   atgc = gc + ctr['a'] + ctr['A'] + ctr['t'] + ctr['T']; 
   return (atgc == 0) ? 0.0 : 100.0*(float)gc/(float)atgc;
@@ -269,6 +275,7 @@ initIndices(int tsize, int startlen, int stoplen)
   }
 }
 
+#ifdef __DEBUG
 static void 
 printInitStatus(int cdsIndex, int utrIndex, int startIndex, int stopIndex, 
 		int states, int seqLen, int tsize, int tableSize, int tindex, 
@@ -311,6 +318,7 @@ printCurrentStatus(int p, char c, int code, int tindex, int tsize,
   }
   printf("\n");
 }
+#endif /* __DEBUG */
 
 inline int 
 getFrame(int state, int tsize, int startoffset, int stopoffset)
@@ -333,15 +341,15 @@ getFrame(int state, int tsize, int startoffset, int stopoffset)
   return -1;
 }
 
-static maxSize = 0;
+static int maxSize = 0;
 static int *V  = NULL;
 static int *tr = NULL;
 
 int
-Compute(char *seq, int iPen, int dPen, int minScore, SV *rv, 
+Compute(const char *seq, int iPen, int dPen, int minScore, SV *rv, 
 	int cdsIndex, int utrIndex, int startIndex, int stopIndex, int minLen)
 {
-  char *p;
+  const char *p;
   int f, i, s, code;
   int iCurr, bPrev, bScore, maxScore, tmpPrev, tmpScore;
   signed char **cdsMat = mg[cdsIndex].m, *utrMat = mg[utrIndex].m[0];
@@ -353,7 +361,7 @@ Compute(char *seq, int iPen, int dPen, int minScore, SV *rv,
   int stoplen = mg[stopIndex].frames, stopoffset = mg[stopIndex].offset;
   int *insTindex = (int *)malloc(sizeof(int) * tsize);
   int *delTindex = (int *)malloc(sizeof(int) * (tsize - 1));
-  AV *av;
+  AV *av = NULL;
 
   /* allocate tables and compute the state indices  */
   int states = 2 + startlen + stoplen + 6*tsize, seqLen = strlen(seq); 
@@ -518,12 +526,14 @@ Compute(char *seq, int iPen, int dPen, int minScore, SV *rv,
     char *res = (char *)malloc(sizeof(char) * 2 * seqLen);
     AV *resArray = newAV(); 
     SV *sv; 
-    int iOld, rStart, rStop;
-    char  *r, *q, c;
+    int iOld = iCurr, rStart, rStop;
+    char  *r, *q;
 
     /* skip non coding */
-    while((iBegin < iCurr) && (iCurr < iStart + startoffset - 1) || 
-	  ((iStop + stopoffset - 1) < iCurr) && (iCurr < iInsAfter[0])) { 
+    while(((iBegin < iCurr)
+	   && (iCurr < iStart + startoffset - 1))
+	  || (((iStop + stopoffset - 1) < iCurr)
+	      && (iCurr < iInsAfter[0]))) { 
 #ifdef __DEBUG
       printf("trace back non-coding: state %d position %4d(%c)\n", iCurr, (p-seq), *p);
 #endif
@@ -539,8 +549,9 @@ Compute(char *seq, int iPen, int dPen, int minScore, SV *rv,
       rStop = (p-seq);
       if (getFrame(iCurr, tsize, startoffset, stopoffset) == 0) {*r++ = 'X';*r++ = 'X';}
       if (getFrame(iCurr, tsize, startoffset, stopoffset) == 1) *r++ = 'X';
-      while((iStart + startoffset - 1 <= iCurr) && (iCurr <= iStop + stopoffset - 1) || 
-	    (iInsAfter[0] <= iCurr)) {
+      while(((iStart + startoffset - 1 <= iCurr)
+	     && (iCurr <= iStop + stopoffset - 1))
+	    || (iInsAfter[0] <= iCurr)) {
 	int done = 0;
 	for (f = 0; f < 3; f++) {
 	  if (iCurr == iInsAfter[f]) { *r++ = tolower(*p); done = 1; }

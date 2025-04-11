@@ -6,7 +6,7 @@
 # Change 1..1 below to 1..last_test_to_print .
 # (It may become useful if the test is moved to ./t subdirectory.)
 
-BEGIN { $| = 1; print "1..1\n"; }
+BEGIN { $| = 1; print "1..26\n"; }
 END {print "not ok 1\n" unless $loaded;}
 use ESTScan;
 $loaded = 1;
@@ -19,13 +19,32 @@ print "ok 1\n";
 # of the test code):
 
 my $cdsIndex = 0;
-my @mat = ESTScan::LoadMatrix("MkTables/hs.smat", "CODING", 4.0);
+my @mat = ESTScan::LoadMatrix("Hs.smat", "CODING", 4.0);
 my $utrIndex = $#mat + 1;
-push @mat, ESTScan::LoadMatrix("MkTables/hs.smat", "UNTRANSLATED", $main::percent);
+push @mat, ESTScan::LoadMatrix("Hs.smat", "UNTRANSLATED", $main::percent);
 my $startIndex = $#mat + 1;
-push @mat, ESTScan::LoadMatrix("MkTables/hs.smat", "START", $main::percent);
+push @mat, ESTScan::LoadMatrix("Hs.smat", "START", $main::percent);
 my $stopIndex = $#mat + 1;
-push @mat, ESTScan::LoadMatrix("MkTables/hs.smat", "STOP", $main::percent);
+push @mat, ESTScan::LoadMatrix("Hs.smat", "STOP", $main::percent);
+print $#mat == 15 ? "ok 2\n" : "not ok 2\n";
+my @EM = (
+  [6, 3, 1],
+  [6, 3, 1],
+  [6, 3, 1],
+  [6, 3, 1],
+  [6, 1, 1],
+  [6, 1, 1],
+  [6, 1, 1],
+  [6, 1, 1],
+  [1, 12, 7],
+  [1, 12, 7],
+  [1, 12, 7],
+  [1, 12, 7],
+  [1, 12, 6],
+  [1, 12, 6],
+  [1, 12, 6],
+  [1, 12, 6]
+);
 for my $i (0 .. $#mat) {
     my $matType = -1;
     if ($ {$mat[$i]}[1] eq 'CODING')       { $matType = 0; }
@@ -37,12 +56,19 @@ for my $i (0 .. $#mat) {
     my $offset = $ {$mat[$i]}[5];
     my $CGmin = int($ {$mat[$i]}[6]);
     my $CGmax = int($ {$mat[$i]}[7]);
-    print("$i, Read matrix, $order, $length, $offset\n");
+    my $ar = $EM[$i];
     my $aRef = $ {$mat[$i]}[8];
-    my $ref = ESTScan::CreateMatrix($matType, $order, $length, $offset, $CGmin, $CGmax,
-				    $aRef, -20, 0);
-    print "CreateMatrix returned $ref\n";
+    my $ref = ESTScan::CreateMatrix($matType, $order, $length, $offset,
+				    $CGmin, $CGmax, $aRef, -20, 0);
     $ {$mat[$i]}[9] = $ref;
+    if ($ref == $i
+	&& $order == $$ar[0]
+	&& $length == $$ar[1]
+	&& $offset == $$ar[2]) {
+      print "ok ", $i + 3, "\n";
+    } else {
+      print "not ok ", $i + 3, "\n";
+    }
 }
 ESTScan::StoreTransits(-10, -10, -5, -80, -40, -80, -40, -20);
 
@@ -70,29 +96,31 @@ ESTScan::Compute("GCTACGAGCGTTAGCTACGAGCGTTA", -10, -10, -100, \@res,
 @res = ();
 my $bigMax = ESTScan::Compute($seq, -150, -150, -100, \@res, 
 		 $cdsIndex, $utrIndex, $startIndex, $stopIndex, 50);
-print "Sequence length: ", length($seq), ", bigMax: $bigMax\n";
-print "We have ", $#res + 1, " results.\n";
-foreach my $r (@res) {
-    print "Maximum: $$r[0] at position $$r[2], starting from $$r[1].\n";
-    my $s = $$r[3];
-    print ">fake\n";
-    $s =~ s/(.{70})/$1\n/g;
-    $s =~ s/\s+$//; # remove a trailing newline, since we add one below.
-    print "$s\n";
+if (length($seq) == 684 && $bigMax == 570 && $#res == 0) {
+  print "ok 19\n";
+} else {
+  print "not ok 19\n";
+}
+my $r = $res[0];
+if ($$r[0] == 570 && $$r[1] == 0 && $$r[2] == 558) {
+  print "ok 20\n";
+} else {
+  print "not ok 20\n";
 }
 $seq .= $seq;
 @res = ();
 $bigMax = ESTScan::Compute($seq, -150, -150, -100, \@res, 
 		 $cdsIndex, $utrIndex, $startIndex, $stopIndex, 50);
-print "Sequence length: ", length($seq), ", bigMax: $bigMax\n";
-print "We have ", $#res + 1, " results.\n";
-foreach my $r (@res) {
-    print "Maximum: $$r[0] at position $$r[2], starting from $$r[1].\n";
-    my $s = $$r[3];
-    print ">fake\n";
-    $s =~ s/(.{70})/$1\n/g;
-    $s =~ s/\s+$//; # remove a trailing newline, since we add one below.
-    print "$s\n";
+if (length($seq) == 1368 && $bigMax == 995 && $#res == 0) {
+  print "ok 21\n";
+} else {
+  print "not ok 21\n";
+}
+$r = $res[0];
+if ($$r[0] == 995 && $$r[1] == 0 && $$r[2] == 1242) {
+  print "ok 22\n";
+} else {
+  print "not ok 22\n";
 }
 $seq = "TTCCATTTGGTCCAAGGCTTGTTAGGATAGTTAAGAAAGCTGCCTATTGGCCGGAGGGAG
 AGGCTTAGGCAGAAGCCTATTACTTTGCAAGGGGCCCTTCAGAAGTCGCTGGGCTCAGAA
@@ -107,9 +135,20 @@ ATAGAAGCCCAGAGAGAGGTAGGTGTAGGAGGCCTGCAGGTACAAATTGACCAGGCTGTT
 GACGGCTGCCTCCACGTCGGTGAAATAATTCTGACGAATCTGGGAGCTCATGGCTGGTTT
 GGCAAGAGGAGCTAACCACCAAAA";
 $seq =~ s/\s//g;
-#ESTScan::Compute($seq, -150, -150, -100, \@res, 
-#		 $cdsIndex, $utrIndex, $startIndex, $stopIndex, 50);
-#print "Sequence length: ", length($seq), "\n";
+@res = ();
+$bigMax = ESTScan::Compute($seq, -150, -150, -100, \@res, 
+		   	   $cdsIndex, $utrIndex, $startIndex, $stopIndex, 50);
+if (length($seq) == 684 && $bigMax == 268 && $#res == 0) {
+  print "ok 23\n";
+} else {
+  print "not ok 23\n";
+}
+$r = $res[0];
+if ($$r[0] == 268 && $$r[1] == 351 && $$r[2] == 674) {
+  print "ok 24\n";
+} else {
+  print "not ok 24\n";
+}
 $seq = "AGTTGTTGCTTATGATGTGTGAGTGAACATATGCCATGCCTGGCCTTTTTTGTGGTTAGCTCCTTCTTGCCAACCAACCA
 TGAGCTCCCAGATTCGTCAGAATTATTCCACCGACGTGGAGGCAGCCGTCAACAGCCTGGTCAATTTGTACCTGCAGGCC
 TCCTACACCTACCTCTCTCTGGGCTTCTATTTCGACCGCGATGATGTGGCTCTGGAAGGCGTGAGCCACTTCTTCCGCGA
@@ -122,15 +161,17 @@ CCTTGCAAAGTAATAGGGCTTCTGCCTAAGCCTCTCCCTCCAGCCAATAGGCAGCTTTCTTAACTATCCTAACAAGCCTT
 GGA";
 $seq =~ s/\s//g;
 @res = ();
-ESTScan::Compute($seq, -150, -150, -100, \@res, 
-		 $cdsIndex, $utrIndex, $startIndex, $stopIndex, 50);
-print "Sequence length: ", length($seq), "\n";
-print "We have ", $#res + 1, " results.\n";
-foreach my $r (@res) {
-    print "Maximum: $$r[0] at position $$r[2], starting from $$r[1].\n";
-    my $s = $$r[3];
-    print ">fake\n";
-    $s =~ s/(.{70})/$1\n/g;
-    $s =~ s/\s+$//; # remove a trailing newline, since we add one below.
-    print "$s\n";
+$bigMax = ESTScan::Compute($seq, -150, -150, -100, \@res, 
+			   $cdsIndex, $utrIndex, $startIndex, $stopIndex, 50);
+if (length($seq) == 722 && $bigMax == 594 && $#res == 0) {
+  print "ok 25\n";
+} else {
+  print "not ok 25\n";
 }
+$r = $res[0];
+if ($$r[0] == 594 && $$r[1] == 79 && $$r[2] == 605) {
+  print "ok 26\n";
+} else {
+  print "not ok 26\n";
+}
+exit 0;

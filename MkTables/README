@@ -1,9 +1,0 @@
-This directory contains tools and configuration files to extract data
-and generate models for ESTScan. The directory should contain the
-following files:
-
-build_model:          perl-script which mostly automates model generation
-build_model_utils.pl: some helper routines for build_model
-*.conf:               example configurations for build_model
-makesmat.c:           compute n-mer usage tables
-maskred.c:            remove redundancy

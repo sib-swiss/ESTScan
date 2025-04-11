@@ -8,7 +8,7 @@ extern "C" {
 }
 #endif
 
-#include "estscan.h"
+#include "estscan_.h"
 
 
 MODULE = ESTScan		PACKAGE = ESTScan
@@ -44,13 +44,13 @@ StoreTransits(a, b, c, d, e, f, g, h)
 
 double
 ComputeGC(a)
-	char *a
+	const char *a
 	OUTPUT:
 	RETVAL
 
 int
 Compute(a, b, c, d, e, f, g, h, i, j)
-	char *a
+	const char *a
 	int b
 	int c
 	int d
@@ -63,7 +63,7 @@ Compute(a, b, c, d, e, f, g, h, i, j)
 	OUTPUT:
 	RETVAL
 
-# $Id: ESTScan.xs,v 1.7.2.3 2002/02/20 12:24:11 clottaz Exp $
+# $Id: ESTScan.xs,v 1.2 2006/12/14 23:59:58 c4chris Exp $
 #
 # Christian Iseli, LICR ITO, Christian.Iseli@licr.org
 #
