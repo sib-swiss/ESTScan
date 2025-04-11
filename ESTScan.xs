@@ -8,54 +8,63 @@ extern "C" {
 }
 #endif
 
-#include "estscan_1.h"
+#include "estscan.h"
 
 
-MODULE = ESTScan1		PACKAGE = ESTScan1
+MODULE = ESTScan		PACKAGE = ESTScan
 PROTOTYPES: ENABLE
 
 # second parameter is a Perl Array Ref
 int
-CreateMatrix(a, b, c, d, e, f)
+CreateMatrix(a, b, c, d, e, f, g, h, i)
 	int a
-	int b
-	int c
-	SV *d
-	int e
-	int f
-	OUTPUT:
-	RETVAL
-
-int
-Compute(a, b, c, d, e, f, g, h, i, j, k, l)
-	char *a
 	int b
 	int c
 	int d
 	int e
-	SV *f
-	int g
+	int f
+	SV *g
 	int h
 	int i
-        int j
-        int k
- 	char *l
 	OUTPUT:
 	RETVAL
 
-# $Id: ESTScan1.xs,v 1.1.1.1 2006/12/18 15:44:47 c4chris Exp $
+int
+StoreTransits(a, b, c, d, e, f, g, h)
+	int a
+	int b
+	int c
+	int d
+	int e
+	int f
+	int g
+	int h
+	OUTPUT:
+	RETVAL
+
+double
+ComputeGC(a)
+	char *a
+	OUTPUT:
+	RETVAL
+
+int
+Compute(a, b, c, d, e, f, g, h, i, j)
+	char *a
+	int b
+	int c
+	int d
+	SV *e
+	int f
+	int g
+	int h
+        int i
+	int j
+	OUTPUT:
+	RETVAL
+
+# $Id: ESTScan.xs,v 1.7.2.3 2002/02/20 12:24:11 clottaz Exp $
 #
 # Christian Iseli, LICR ITO, Christian.Iseli@licr.org
 #
 # Copyright (c) 1999 Swiss Institute of Bioinformatics. All rights reserved.
-
-
-
-
-
-
-
-
-
-
-

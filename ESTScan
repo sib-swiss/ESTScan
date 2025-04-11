@@ -1,0 +1,324 @@
+#!/usr/local/bin/perl 
+
+# $Id: ESTScan,v 1.30.2.6 2002/02/20 15:37:42 clottaz Exp $
+#
+# Christian Iseli, LICR ITO, Christian.Iseli@licr.org
+# Claudio Lottaz, SIB-ISREC, Claudio.Lottaz@isb-sib.ch
+#
+# Copyright (c) 1999, 2000 Swiss Institute of Bioinformatics. All rights reserved.
+
+use strict;
+use Getopt::Long;
+use FASTAFile;
+use ESTScan;
+
+$| = 1; # Very important, otherwise get garbled output in batch mode.
+
+my $ESTScanDir = $ENV{"ESTSCANDIR"};
+if ($ESTScanDir eq "") {
+    $ESTScanDir = "/usr/molbio/share/ESTScan";
+}
+
+$main::copyright = <<EndOfMsg;
+This is ESTScan version 2.0a (February 2002)
+Copyright (c) 1999, 2000, 2001 by the Swiss Institute of Bioinformatics.
+All rights reserved. See the file COPYRIGHT for details.
+EndOfMsg
+
+my %opt;
+my @options = ( "help", "m=i", "d=i", "T=s", "i=i", "M=s", "p=f", "N=i", "w=i", "a!", 
+		"O!", "s=i", "l=i", "t=s", "o=s", "b=f", "n!", "v!", "S!" );
+
+# Properly initialize Getopt for our purposes...
+Getopt::Long::Configure("no_ignore_case");
+
+$main::version = '2.0a';
+
+$main::min     = -100;
+$main::dPen    = -50;
+$main::iPen    = -50;
+$main::ts5uPen = -10;
+$main::tscPen  = -10;
+$main::ts3uPen = -5;
+$main::t5ucPen = -80;
+$main::t5uePen = -40;
+$main::tc3uPen = -80;
+$main::tcePen  = -40;
+$main::t3uePen = -20;
+$main::matrix  = "$ESTScanDir/Hs.smat";
+$main::percent = 4.0;
+$main::Nvalue = 0;
+$main::sWidth = 60;
+$main::all = 0;
+$main::maxOnly = 0;
+$main::skipLen = 1;
+$main::minLen = 50;
+$main::transl = undef;
+$main::out = \*STDOUT;
+$main::both = 1.0;
+$main::no_del = 0;
+$main::single = 0;
+
+if( ! GetOptions( \%opt, @options ) ) { &usage(); }
+&usage() if defined $opt{'help'};
+
+$main::min       = $opt{'m'}     if defined $opt{'m'};
+$main::dPen      = $opt{'d'}     if defined $opt{'d'};
+$main::iPen      = $opt{'i'}     if defined $opt{'i'};
+$main::matrix    = $opt{'M'}     if defined $opt{'M'};
+$main::percent   = $opt{'p'}     if defined $opt{'p'};
+$main::Nvalue    = $opt{'N'}     if defined $opt{'N'};
+$main::sWidth    = $opt{'w'}     if defined $opt{'w'};
+$main::all       = $opt{'a'}     if defined $opt{'a'};
+$main::maxOnly   = $opt{'O'}     if defined $opt{'O'};
+$main::skipLen   = $opt{'s'}     if defined $opt{'s'};
+$main::minLen    = $opt{'l'}     if defined $opt{'l'};
+$main::both      = $opt{'b'}     if defined $opt{'b'};
+$main::no_del    = $opt{'n'}     if defined $opt{'n'};
+$main::single    = $opt{'S'}     if defined $opt{'S'};
+if (defined $opt{'t'}) {
+    if ($opt{'t'} eq "-") {
+	$main::transl = \*STDOUT;
+    } else {
+	use Symbol;
+	my $path = $opt{'t'};
+	$main::transl = gensym;
+	if (!(open $main::transl, ">$path")) {
+	    warn "Could not create file \"$path\": $!";
+	    exit 1;
+	}
+    }
+}
+if (defined $opt{'o'}) {
+    if ($opt{'o'} eq "-") {
+	$main::out = \*STDOUT;
+    } else {
+	use Symbol;
+	my $path = $opt{'o'};
+	$main::out = gensym;
+	if (!(open $main::out, ">$path")) {
+	    warn "Could not create file \"$path\": $!";
+	    exit 1;
+	}
+    }
+}
+if (defined $opt{'v'}) {
+    print $main::copyright;
+    exit 0;
+}
+if (defined $opt{'T'}) {
+    my $nbProbs = ($opt{'T'} =~ s/,/,/g) + 1;
+    if (($nbProbs) != 8) { 
+	usage("Wrong number of transition probabilities("  . $nbProbs . ")"); 
+    }
+    ($main::ts5uPen,$main::tscPen,$main::ts3uPen,$main::t5ucPen,
+     $main::t5uePen,$main::tc3uPen,$main::tcePen,$main::t3uePen) = split(/,/,$opt{'T'});
+}
+&usage() if $#ARGV < 0;
+
+# Load all the matrices.
+my @mat = ESTScan::LoadMatrix($main::matrix, "CODING", $main::percent);
+my $firstUntranslated = $#mat +1;
+push @mat, ESTScan::LoadMatrix($main::matrix, "UNTRANSLATED", $main::percent);
+my $firstStartPf = $#mat + 1;
+push @mat, ESTScan::LoadMatrix($main::matrix, "START", $main::percent);
+my $firstStopPf = $#mat + 1;
+push @mat, ESTScan::LoadMatrix($main::matrix, "STOP", $main::percent);
+my $lastMat = $#mat + 1;
+for my $i (0 .. $#mat) {
+    my $matType = -1;
+    if ($ {$mat[$i]}[1] eq 'CODING')       { $matType = 0; }
+    if ($ {$mat[$i]}[1] eq 'UNTRANSLATED') { $matType = 1; }
+    if ($ {$mat[$i]}[1] eq 'START')        { $matType = 2; }
+    if ($ {$mat[$i]}[1] eq 'STOP')         { $matType = 3; }
+    my $order = $ {$mat[$i]}[3];
+    my $length = $ {$mat[$i]}[4];
+    my $offset = $ {$mat[$i]}[5];
+    my $CGmin = int($ {$mat[$i]}[6]);
+    my $CGmax = int($ {$mat[$i]}[7]);
+    my $aRef = $ {$mat[$i]}[8];
+    my $ref=ESTScan::CreateMatrix($matType, $order, $length, $offset, $CGmin, $CGmax,
+				  $aRef, $main::min, $main::Nvalue);
+}
+ESTScan::StoreTransits($main::ts5uPen,$main::tscPen,$main::ts3uPen,$main::t5ucPen,
+		       $main::t5uePen,$main::tc3uPen,$main::tcePen,$main::t3uePen);
+
+my $src = FASTAFile->new($ARGV[0]);
+$src->openStream;
+my $seq;
+#my $seqCtr = 0;
+while (defined($seq = $src->getNext)) {
+#    print STDERR "$seqCtr sequences done\n"; $seqCtr++;
+    my $length = $seq->seqLength;
+    next if $length < $main::skipLen;
+    my $percent = ESTScan::ComputeGC($seq->{_seq});
+    if ($percent == 0) { next; }
+#    print "percent is $percent, C says $newpercent\n";
+
+    # Find the correct matrices.
+    my $matIndex = FindMatrix(0, $firstUntranslated, $percent, \@mat);
+    if ($matIndex == -1) { warn "No CDS matrix found for $percent % GC."; next; }
+    my $utrMatIndex = FindMatrix($firstUntranslated, $firstStartPf, $percent, \@mat);
+    if ($utrMatIndex == -1) { warn "No UTR matrix found for $percent % GC."; }
+    my $startMatIndex = FindMatrix($firstStartPf, $firstStopPf, $percent, \@mat);
+    if ($startMatIndex == -1) { warn "No start matrix found for $percent % GC."; }
+    my $stopMatIndex = FindMatrix($firstStopPf, $lastMat, $percent, \@mat);
+    if ($stopMatIndex == -1) { warn "No stop matrix found for $percent % GC."; }
+
+    my @res;
+    my $bigMax = ESTScan::Compute($seq->{_seq}, $main::iPen, $main::dPen, $main::min,
+				  $main::maxOnly == 0 ? \@res : undef, $matIndex,
+				  $utrMatIndex, $startMatIndex, $stopMatIndex, 
+				  $main::minLen);
+    my $result_nr = -1;
+    if ($main::single != 0) {
+	showResults($seq, \@res, $bigMax, \$result_nr, $bigMax);
+	next;
+    }
+    my @resRev;
+    my $seqRev = $seq->revComp;
+    my $bigMaxRev = ESTScan::Compute($seqRev->{_seq},$main::iPen,$main::dPen,$main::min,
+				     $main::maxOnly == 0 ? \@resRev : undef, $matIndex, 
+				     $utrMatIndex, $startMatIndex, $stopMatIndex, 
+				     $main::minLen);
+   
+    my $theRealMax = $bigMax >= $bigMaxRev ? $bigMax : $bigMaxRev;
+    showResults($seq, \@res, $bigMax, \$result_nr, $theRealMax);
+    showResults($seqRev, \@resRev, $bigMaxRev, \$result_nr, $theRealMax);
+}
+exit 0;
+
+sub usage {
+    my($msg) = @_;
+    print "$main::copyright
+  Usage: ESTScan [options] <file>
+  where options are:
+   -m <int>     min value in matrix [$main::min]
+   -d <int>     deletion penalty [$main::dPen]
+   -i <int>     insertion penalty [$main::iPen]
+   -T <int*>    8 integers used as log-probabilities for transitions,
+                start->5'UTR, start->CDS, start->3'UTR, 5'UTR->CDS,
+                5'UTR->end, CDS->3'UTR, CDS->end, 3'UTR->end
+                ($main::ts5uPen,$main::tscPen,$main::ts3uPen,$main::t5ucPen,$main::t5uePen,$main::tc3uPen,$main::tcePen,$main::t3uePen)
+   -M <file>    score matrices file (\$ESTSCANDIR/Hs.smat)
+                [$main::matrix]
+   -p <float>   GC select correction for score matrices [$main::percent]
+   -N <int>     how to compute the score of N [$main::Nvalue]
+   -w <int>     width of the FASTA sequence output [$main::sWidth]
+   -a           All in one sequence output [$main::all]
+   -O           report header information for best match only [$main::maxOnly]
+   -S           only analyze positive strand [$main::single]
+   -b <float>   only results are shown, which have scores higher than this 
+                fraction of the best score [$main::both].
+   -l <int>     only results longer than this length are shown ($main::minLen)
+   -n           remove deleted nucleotides from the output ($main::no_del)
+   -t <file>    Translate to protein.  - means stdout.
+                will go to the file and the nucleotides will still go to stdout.
+   -o <file>    send output to file.  - means stdout.  If both -t and -o specify
+                stdout, only proteins will be written.
+   -s <int>     Skip sequences shorter than length [$main::skipLen]
+   -v           version information
+
+ESTScan returns results (coding sequences) in FASTA format adding the
+score as well as the positions of predicted start and stop sites to
+the header. These values are added in the cited order after the name
+of the coding sequence.\n"; 
+    if ($msg) { print "\n$msg\n"; }
+    exit 1; 
+}
+
+sub FindMatrix {
+    my ($from, $next, $percent, $mat) = @_;
+    my $i;
+    for ($i = $from; $i < $next; $i++) {
+	if ($percent >= ${$$mat[$i]}[6] && $percent <= ${$$mat[$i]}[7]) { return( $i );
+	}
+    }
+    return -1;
+}
+
+sub normalizedScore {
+    my ($score) = @_;
+    my $frac = $score / $main::cutoff;
+    if ($frac == 0.0) {
+	$frac = 0.000001;
+    }
+    $score = log ($frac);
+    return sprintf "%.1f", $score * 100.0;
+}
+
+sub showResults {
+    my ($seq, $rres, $bigMax, $cnt, $theRealMax) = @_;
+    if ($main::maxOnly != 0) {
+	my $head = $seq->seqHead;
+	$head =~ s/^(\S+)/$1 $bigMax/;
+	if (($theRealMax * $main::both <= $bigMax) && ($$cnt == -1)) { 
+	    print $main::out "$head\n";
+	    $$cnt += 1;
+	}
+	return;
+    }
+    if ($main::all == 1 && $#$rres >= 0) {
+	my $scores = "";
+	my $outSeq = "";
+	my $lastPos = 0;
+	foreach my $r (@$rres) {
+	    my $curScore = $$r[0];
+	    $scores .= $curScore . " ";
+	    if ($theRealMax * $main::both > $curScore) { next; }
+	    if ($$r[1] > $lastPos) {
+		my $s = substr($seq->{_seq}, $lastPos, $$r[1] - $lastPos);
+		$s =~ tr/A-Z/a-z/;
+		$outSeq .= $s;
+	    }
+	    $outSeq .= $$r[3];
+	    $lastPos = $$r[2] + 1;
+	}
+	if ($lastPos < $seq->seqLength) {
+	    my $s = substr($seq->{_seq}, $lastPos);
+	    $s =~ tr/A-Z/a-z/;
+	    $outSeq .= $s;
+	}
+	my $head = $seq->seqHead;
+	$head =~ s/^(\S+)/$1 $scores/;
+	print $main::out "$head\n";
+	$outSeq =~ s/(.{$main::sWidth})/$1\n/g;
+	$outSeq =~ s/\s+$//; # remove a trailing newline, since we add one below.
+	print $main::out "$outSeq\n";
+	return;
+    }
+    foreach my $r (@$rres) {
+	my $score = $$r[0];
+	if ($theRealMax * $main::both > $score) { next; }
+ 
+	# Should remove lower cases if we want to create a correct sequence.
+	my $rSeq = $$r[3];
+	my $head = $seq->seqHead;
+	if ($$cnt >= 0) {
+	    my $c = chr(ord("a") + $$cnt);
+	    $head =~ s/^([^|]+)\|([^| ]+)/$1|$2$c/;
+	}
+	$$cnt += 1;
+	my $start = $$r[1] + 1;
+	my $end = $$r[2] + 1;
+	$head =~ s/^(\S+)/$1 $$r[0] $start $end /;
+	if (defined $main::transl) {
+	    my $pSeq = $rSeq;
+	    $pSeq =~ s/[acgt]//g; # Remove lowercases...
+	    $pSeq = BTLib::na2aa($pSeq);
+	    print $main::transl "$head; translated\n";
+	    $pSeq =~ s/(.{$main::sWidth})/$1\n/g;
+	    $pSeq =~s/\n$//; # remove trailing newline
+	    $pSeq =~ s/O$//; # remove trailing stop codon
+	    $pSeq =~ tr/O/X/; # translate intermediate stop codons by X
+	    print $main::transl "$pSeq\n";
+	    next if $main::transl == \*STDOUT && $main::out == \*STDOUT;
+	}
+	print $main::out "$head\n";
+	if ($main::no_del) { $rSeq =~ s/[acgt]//g; }
+	$rSeq =~ s/(.{$main::sWidth})/$1\n/g;
+	$rSeq =~ s/\s+$//; # remove a trailing newline, since we add one below.
+	print $main::out "$rSeq\n";
+    }
+}
+
