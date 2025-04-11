@@ -1,6 +1,6 @@
-# $Id: estscan.spec,v 1.4 2006/12/19 16:02:29 c4chris Exp $
+# $Id: estscan.spec,v 1.6 2007/02/01 15:18:17 c4chris Exp $
 Name:           estscan
-Version:        3.0
+Version:        3.0.1
 Release:        0
 Summary:        Detect coding regions in EST sequences
 
@@ -91,5 +91,15 @@ rm -rf $RPM_BUILD_ROOT
 
 
 %changelog
+* Thu Feb  1 2007 Christian Iseli <Christian.Iseli@licr.org> - 3.0.1-0
+- version 3.0.1
+- 2007-02-01 16:15  c4chris
+	* estscan.c, estscan.spec: Bump to version 3.0.1.
+- 2007-01-25 15:25  c4chris
+	* extract_mRNA: Make use of new BTLib version 0.16 (can now parse
+	  general GenBank format hopefully).
+- 2007-01-25 14:39  c4chris
+	* prepare_data: Properly count nt (skip newlines).
+
 * Tue Dec 19 2006 Christian Iseli <Christian.Iseli@licr.org> - 3.0-0
 - created
