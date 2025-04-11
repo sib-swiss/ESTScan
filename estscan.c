@@ -1,4 +1,4 @@
-/* $Id: estscan.c,v 1.6 2007/03/27 14:45:14 c4chris Exp $
+/* $Id: estscan.c,v 1.7 2009/06/17 07:40:08 c4chris Exp $
  *
  * Christian Iseli, LICR ITO, Christian.Iseli@licr.org
  *
@@ -116,8 +116,8 @@ typedef struct _options_t {
 } options_t;
 
 static const char Version[] =
-"This is ESTScan version 3.0.2.\n"
-"Copyright (c) 1999-2007 by the Swiss Institute of Bioinformatics.\n"
+"This is ESTScan version 3.0.3.\n"
+"Copyright (c) 1999-2009 by the Swiss Institute of Bioinformatics.\n"
 "All rights reserved. See the file COPYRIGHT for details.\n";
 
 static const char Usage[] =

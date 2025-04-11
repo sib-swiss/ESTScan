@@ -1,5 +1,5 @@
 /*
- * $Id: makesmat.c,v 1.4 2005/04/06 23:42:52 c4chris Exp $
+ * $Id: makesmat.c,v 1.5 2009/02/18 17:09:21 c4chris Exp $
  *
  * makesmat.c
  *
@@ -313,7 +313,13 @@ count_tuples(void)
     }
     s += 5;
     cdsStart = atoi(s) - 1; /* C index start at 0! */
-    s = strchr(s, ' ') + 1;
+    s = strchr(s, ' ');
+    if (s == NULL) {
+      fprintf(stderr, "Bad FASTA header line:\n%s\n", buf);
+      fprintf(stderr, "Expected CDS: <integer1> <integer2>\n");
+      exit(1);
+    }
+    s += 1;
     cdsEnd =   atoi(s) - 1; /* C index start at 0! */
     while (buf[strlen(buf)-1] != '\n') {
       fgets(buf, 1024, stdin);
@@ -338,6 +344,14 @@ count_tuples(void)
 	singleCtr[longbuf[i]]++;
 	singleTotal++;
       }
+    }
+    /* sanity check  */
+    if (cdsStart >= pos || cdsEnd >= pos) {
+      fprintf(stderr, "Bad FASTA header line:\n%s\n", buf);
+      fprintf(stderr, "Expected CDS: <integer1> <integer2>\n");
+      fprintf(stderr, "CDS start (%d) or CDS end (%d) is out of range (%d)\n",
+	      cdsStart, cdsEnd, pos);
+      exit(1);
     }
 
     /* count 5'UTR */

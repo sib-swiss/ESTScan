@@ -1,6 +1,6 @@
-# $Id: estscan.spec,v 1.8 2007/03/27 14:47:54 c4chris Exp $
+# $Id: estscan.spec,v 1.10 2009/06/17 07:42:24 c4chris Exp $
 Name:           estscan
-Version:        3.0.2
+Version:        3.0.3
 Release:        0
 Summary:        Detect coding regions in EST sequences
 
@@ -91,6 +91,15 @@ rm -rf $RPM_BUILD_ROOT
 
 
 %changelog
+* Wed Jun 17 2009 Christian Iseli <Christian.Iseli@licr.org> - 3.0.3-0
+- version 3.0.3
+- 2009-06-17 09:40  c4chris
+        * estscan.c, estscan.spec: Bump to version 3.0.3.
+- 2009-02-18 18:09  c4chris
+        * makesmat.c: Add some sanity checks on FASTA header line format.
+- 2007-03-27 16:47  c4chris
+        * estscan.spec: Update changelog.
+
 * Tue Mar 27 2007 Christian Iseli <Christian.Iseli@licr.org> - 3.0.2-0
 - version 3.0.2
 - 2007-03-27 16:45  c4chris
